@@ -5,21 +5,28 @@
 #include "ADC.h"
 #include <tim.h>
 #include "stdio.h"
-#define IC_BUF_SIZE 32     // 采样深度，越大越稳定但刷新越慢
-#define IC_PRESCALER 8      // 对应你截图中的 Division by 8
 
 //TIM15 - 1S timer
-//TIM2  - Input Capturer
+//TIM2,3  - Input Capturer
 
 #define Fs 240000000
-uint32_t State = 0;
-uint32_t T1, T2;
-uint32_t Nx = 0;
-uint32_t TIM2_Over_Cnt = 0;
-double Fx=0;
+uint8_t State_CH1 =0, State_CH2 = 0;
+uint32_t T1_CH1, T2_CH1 , T1_CH2, T2_CH2 ;
+uint32_t Nx_CH1, Nx_CH2 = 0;
+uint32_t TIM2_Over_Cnt = 0,TIM3_Over_Cnt = 0;
+double Fx_CH1=0 , Fx_CH2=0;
 
-uint8_t IC_flag=0;
+uint8_t IC_CH1_flag=0 , IC_CH2_flag=0;
 
+void Trigger_Frequency_Measurement(void);
+void process_frequency_logic(TIM_HandleTypeDef *htim,
+                             volatile uint8_t *pState,
+                             uint32_t *pT1,
+                             uint32_t *pT2,
+                             uint32_t *pNx,
+                             volatile uint32_t *pOverCnt,
+                             double *pFx
+                             );
 // HAL_TIM_Base_Start_IT(&htim15);
 // HAL_TIM_Base_Start_IT(&htim2);
 // HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
@@ -30,74 +37,89 @@ void StartADCTask(void *argument) {
     while (1) {
         osSemaphoreAcquire(FreqSEMHandle,osWaitForever);
 
-        if (IC_flag == 0) {
-            HAL_TIM_Base_Start_IT(&htim2);
-            HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
-            IC_flag = 1;
-        }
+        Trigger_Frequency_Measurement();
+        osDelay(1100);
+        HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_1);
+        HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
+        HAL_TIM_Base_Stop_IT(&htim15);
 
 
         osDelay(10);
 
     }
 
+} //test  freq:AA 09 AD 00 00 00 00 60 01
+
+void Trigger_Frequency_Measurement(void) {
+    // 1. 初始化/重置所有状态变量
+    State_CH1 = 0;
+    State_CH2 = 0;
+    TIM2_Over_Cnt = 0;
+    TIM3_Over_Cnt = 0;
+
+    // 2. 启动输入捕获定时器（它们现在处于状态0，等待第一个上升沿）
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+
+    // 3. 启动各自的基准时钟（用于记录 Ns）
+    HAL_TIM_Base_Start_IT(&htim2);
+    HAL_TIM_Base_Start_IT(&htim3);
 
 
+
+    // 4. 开启 1s 闸门定时器
+    // 当 TIM15 溢出时，会在回调中把 State 改为 2，通知捕获逻辑准备关闸
+    __HAL_TIM_SET_COUNTER(&htim15, 0);
+    HAL_TIM_Base_Start_IT(&htim15);
 }
 
+
+
+
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM2) {
-        if (State == 0) {
-            // 状态0：捕获到第一个上升沿，开启测量
-            T1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            TIM2_Over_Cnt = 0;
-            Nx = 0;
-            State = 1;
-            HAL_TIM_Base_Start_IT(&htim15); // 开启1s定时闸门
-        }
-        else if (State == 1) {
-            Nx++; // 闸门期间，只管累加被测信号个数
-        }
-        else if (State == 2) {
-            // 状态2：1s时间已过，捕获最后一个上升沿，结束测量
-            T2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            Nx++;
+    if (htim->Instance == TIM2) process_frequency_logic(&htim2,&State_CH1,&T1_CH1,&T2_CH1,&Nx_CH1,&TIM2_Over_Cnt,&Fx_CH1);
+    if (htim->Instance == TIM3) process_frequency_logic(&htim3,&State_CH2,&T1_CH2,&T2_CH2,&Nx_CH2,&TIM3_Over_Cnt,&Fx_CH2);
+}
 
 
-            double Ns = (double)TIM2_Over_Cnt * 65535.0f + T2 - T1;
-            Fx = (double)Nx * Fs / Ns;
 
-            HAL_TIM_Base_Stop_IT(&htim15);
-            State = 0; // 重置状态，等待下一次任务启动
+void process_frequency_logic(TIM_HandleTypeDef *htim,
+                             volatile uint8_t *pState,
+                             uint32_t *pT1,
+                             uint32_t *pT2,
+                             uint32_t *pNx,
+                             volatile uint32_t *pOverCnt,
+                             double *pFx
+                             )
+{
+    if (*pState == 0) {
+        // --- 状态 0: 捕获到第一个边沿，测量开始 ---
+        *pT1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+        *pOverCnt = 0;
+        *pNx = 0;
+        *pState = 1;
+    }
+    else if (*pState == 1) {
+        // --- 状态 1: 闸门开启期间，仅累加被测信号脉冲数 ---
+        (*pNx)++;
+    }
+    else if (*pState == 2) {
+        // --- 状态 2: 1s 时间已过，捕获最后一个边沿，结束测量 ---
+        *pT2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+        (*pNx)++; // 加上最后这一个脉冲
+        double Ns = (double)(*pOverCnt) * 65536.0f + (double)(*pT2) - (double)(*pT1);
+
+        // 核心公式: Fx = (Nx * Fs) / Ns
+        // 如果使用了分频器 (Division by 8)，Nx 需要乘以 8
+        if (Ns > 0) {
+            *pFx = (double)(*pNx) * Fs / Ns;
         }
+
+
     }
 }
 
 
 
 
-// float freq1=0,freq2=0;
-// uint32_t IC_Cnt1=0,IC_Cnt2=0;
-// uint32_t IC_Buffer1[IC_BUF_SIZE] __attribute__((section(".dma_buffer")));
-// uint32_t IC_Buffer2[IC_BUF_SIZE] __attribute__((section(".dma_buffer")));
-// uint8_t ic_flag1=0,ic_flag2=0;
-//
-//
-// void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
-//     if(htim->Channel==HAL_TIM_ACTIVE_CHANNEL_1){
-//         IC_Cnt1 = IC_Buffer1[IC_BUF_SIZE-1]-IC_Buffer1[0];
-//         freq1 =  (float)(IC_BUF_SIZE-1)*8*240000000/IC_Cnt1;
-//         HAL_TIM_IC_Stop_DMA(&htim2,TIM_CHANNEL_1);
-//         // HAL_TIM_IC_Start_DMA(&htim2,TIM_CHANNEL_1,IC_Buffer1,IC_BUF_SIZE);
-//         // ic_flag1=1;
-//     }
-//     else if(htim->Channel==HAL_TIM_ACTIVE_CHANNEL_3){
-//         //...
-//     }
-// }
-//
-//
-// void IC_ON(){
-//     //ic_flag1=0;
-//     HAL_TIM_IC_Start_DMA(&htim2,TIM_CHANNEL_1,IC_Buffer1,IC_BUF_SIZE);
-// }
+

@@ -11,8 +11,8 @@ void IC_ON();
 void CalcFx(void);
 
 
-extern uint32_t State;
-extern uint32_t TIM2_Over_Cnt;
+extern uint8_t State_CH1,State_CH2;
+extern uint32_t TIM2_Over_Cnt,TIM3_Over_Cnt;
 
 
 

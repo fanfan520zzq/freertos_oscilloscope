@@ -28,7 +28,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ADC.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,6 +104,7 @@ int main(void)
   MX_TIM7_Init();
   MX_TIM15_Init();
   MX_USART1_UART_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -232,7 +233,14 @@ void MPU_Config(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
+  if (htim->Instance == TIM15) {
+    if (State_CH1 == 1) State_CH1 = 2; // 1s 时间到，准备关闭闸门
+    if (State_CH2 == 1) State_CH2 = 2; // 1s 时间到，准备关闭闸门
 
+    HAL_TIM_Base_Stop_IT(&htim15);
+  }
+  if (htim->Instance == TIM2)  TIM2_Over_Cnt++; // 记录高位溢出
+  if (htim->Instance == TIM3)  TIM3_Over_Cnt++; // 记录高位溢出
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM8)
   {
