@@ -1,19 +1,15 @@
 //
-// Created by Lenovo on 2026/2/17.
+// Created by Lenovo on 2026/2/20.
 //
 
-#ifndef ITVM_DDS_ADC_H
-#define ITVM_DDS_ADC_H
-#include <main.h>
+#ifndef IIT6_OSCILLISCOPE_ADC_H
+#define IIT6_OSCILLISCOPE_ADC_H
 
+#include "FREQ.h"
 
-void IC_ON();
-void CalcFx(void);
-
-
-extern uint8_t State_CH1,State_CH2;
-extern uint32_t TIM2_Over_Cnt,TIM3_Over_Cnt;
+#define CH1 1
+#define CH2 2
 
 
 
-#endif //ITVM_DDS_ADC_H
+#endif //IIT6_OSCILLISCOPE_ADC_H

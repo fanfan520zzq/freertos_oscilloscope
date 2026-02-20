@@ -39,6 +39,7 @@ extern "C" {
 extern  osMessageQueueId_t MSGQueueHandle;
 extern  osMessageQueueId_t UARTQueueHandle;
 extern  osSemaphoreId_t FreqSEMHandle;
+extern  osSemaphoreId_t ADCSEMHandle;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/

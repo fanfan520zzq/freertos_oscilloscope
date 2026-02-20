@@ -4,7 +4,7 @@
 
 #include "DDS.h"
 #include "MSG.h"
-#include "ADC.h"
+#include "FREQ.h"
 
 
 
@@ -14,6 +14,7 @@ void StartCMDTask(void *argument) {   //PA4 PA5
     APP_Text* MSG;
     DDS_Init();  //初始化ROM
 
+    HAL_TIM_PWM_Start(&htim14, TIM_CHANNEL_1);
 
 
     while (1) {

@@ -68,12 +68,19 @@ const osThreadAttr_t CMDTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for FREQTask */
+osThreadId_t FREQTaskHandle;
+const osThreadAttr_t FREQTask_attributes = {
+  .name = "FREQTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal7,
+};
 /* Definitions for ADCTask */
 osThreadId_t ADCTaskHandle;
 const osThreadAttr_t ADCTask_attributes = {
   .name = "ADCTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal7,
+  .priority = (osPriority_t) osPriorityNormal6,
 };
 /* Definitions for UARTQueue */
 osMessageQueueId_t UARTQueueHandle;
@@ -90,15 +97,24 @@ osSemaphoreId_t FreqSEMHandle;
 const osSemaphoreAttr_t FreqSEM_attributes = {
   .name = "FreqSEM"
 };
+/* Definitions for ADCSEM */
+osSemaphoreId_t ADCSEMHandle;
+const osSemaphoreAttr_t ADCSEM_attributes = {
+  .name = "ADCSEM"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+void StartDefaultTask(void *argument);
+extern void StartUARTTask(void *argument);
+extern void StartCMDTask(void *argument);
+extern void StartADCTask(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
 extern void StartUARTTask(void *argument);
 extern void StartCMDTask(void *argument);
+extern void StartFREQTask(void *argument);
 extern void StartADCTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -120,6 +136,9 @@ void MX_FREERTOS_Init(void) {
   /* Create the semaphores(s) */
   /* creation of FreqSEM */
   FreqSEMHandle = osSemaphoreNew(1, 0, &FreqSEM_attributes);
+
+  /* creation of ADCSEM */
+  ADCSEMHandle = osSemaphoreNew(1, 0, &ADCSEM_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -149,6 +168,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of CMDTask */
   CMDTaskHandle = osThreadNew(StartCMDTask, NULL, &CMDTask_attributes);
+
+  /* creation of FREQTask */
+  FREQTaskHandle = osThreadNew(StartFREQTask, NULL, &FREQTask_attributes);
 
   /* creation of ADCTask */
   ADCTaskHandle = osThreadNew(StartADCTask, NULL, &ADCTask_attributes);
