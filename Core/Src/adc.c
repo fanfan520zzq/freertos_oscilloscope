@@ -89,6 +89,7 @@ void MX_ADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC1_Init 2 */
+  HAL_ADCEx_Calibration_Start(&hadc1,ADC_CALIB_OFFSET,ADC_SINGLE_ENDED);
 
   /* USER CODE END ADC1_Init 2 */
 
@@ -144,7 +145,7 @@ void MX_ADC2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC2_Init 2 */
-
+  HAL_ADCEx_Calibration_Start(&hadc2,ADC_CALIB_OFFSET,ADC_SINGLE_ENDED);
   /* USER CODE END ADC2_Init 2 */
 
 }

@@ -102,6 +102,11 @@ osSemaphoreId_t ADCSEMHandle;
 const osSemaphoreAttr_t ADCSEM_attributes = {
   .name = "ADCSEM"
 };
+/* Definitions for FFTSEM */
+osSemaphoreId_t FFTSEMHandle;
+const osSemaphoreAttr_t FFTSEM_attributes = {
+  .name = "FFTSEM"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -139,6 +144,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of ADCSEM */
   ADCSEMHandle = osSemaphoreNew(1, 0, &ADCSEM_attributes);
+
+  /* creation of FFTSEM */
+  FFTSEMHandle = osSemaphoreNew(1, 0, &FFTSEM_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */

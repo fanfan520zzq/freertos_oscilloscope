@@ -36,8 +36,7 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
-        Core/Task/ADC.c
-        Core/Task/ADC.h)
+)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
@@ -57,12 +56,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Task/DDS.h
         Core/Task/FREQ.c
         Core/Task/FREQ.h
+        Core/Task/ADCTask.c
+        Core/Task/ADCTask.h
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         Core/Task
+        Core/Inc
 )
 
 # Add project symbols (macros)

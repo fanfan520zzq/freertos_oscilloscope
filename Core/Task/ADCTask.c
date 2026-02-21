@@ -1,19 +1,21 @@
 //
 // Created by Lenovo on 2026/2/20.
 //
-
-#include "ADC.h"
+#include <adc.h>
+#include "ADCTask.h"
 #include "tim.h"
+
 
 //osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
 
-//TIM4-CH1 TIM1-CH2
+//TIM4-CH1-PC4-PA0 TIM1-CH2-PB1-PB6
 
 uint32_t Sample_Rate_CH1 = 0 , Sample_Rate_CH2 = 0 ;
 uint8_t psc_CH1=0, psc_CH2=0;
 uint16_t arr_CH1=0, arr_CH2=0;
-uint16_t CH1_Buffer[1024] __attribute__((section(".dma_buffer")));
-uint16_t CH2_Buffer[1024] __attribute__((section(".dma_buffer")));
+uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
+uint16_t CH2_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
+uint8_t flag_CH1=0,flag_CH2=0;
 
 typedef struct {
     TIM_HandleTypeDef* htim;
@@ -28,13 +30,43 @@ ADC_Channel_Cfg Get_Cfg(uint8_t channel) {
     return (ADC_Channel_Cfg){&htim1, &psc_CH2, &arr_CH2, &Sample_Rate_CH2};
 }
 
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+    if(hadc == &hadc1){
+        //SCB_InvalidateDCache_by_Addr((uint32_t*)CH1_Buffer, sizeof(CH1_Buffer));
+        HAL_ADC_Stop(&hadc1);
+        flag_CH1=1;
+    }
+    if(hadc == &hadc2) {
+        //SCB_InvalidateDCache_by_Addr((uint32_t*)CH2_Buffer, sizeof(CH2_Buffer));
+        HAL_ADC_Stop(&hadc2);
+        flag_CH2=1;
+    }
+}
+
+void Start_Sample(void);
 void Set_sample_rate_arr(double freq, uint8_t channel);
+
 void StartADCTask(void *argument) {
     osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
+    Set_sample_rate_arr(Fx_CH1,CH1);
+    Set_sample_rate_arr(Fx_CH2,CH2);
+    Start_Sample();
 
     int k=1;
 
+}
 
+void Start_Sample(void) {
+    flag_CH1=0;  flag_CH2=0;
+    HAL_ADC_Stop_DMA(&hadc1);
+    HAL_ADC_Stop_DMA(&hadc2);
+
+    HAL_TIM_Base_Start(&htim4);  //TIM4--CH1
+    HAL_TIM_Base_Start(&htim1);  //TIM1--CH2
+    // SCB_CleanDCache_by_Addr((uint32_t*)CH1_Buffer, sizeof(CH1_Buffer));
+    // SCB_CleanDCache_by_Addr((uint32_t*)CH2_Buffer, sizeof(CH2_Buffer));
+    HAL_ADC_Start_DMA(&hadc1,(uint32_t*)CH1_Buffer,LEN);
+    HAL_ADC_Start_DMA(&hadc2,(uint32_t*)CH2_Buffer,LEN);
 }
 
 void Set_sample_rate_arr(double freq, uint8_t channel) {
@@ -44,12 +76,12 @@ void Set_sample_rate_arr(double freq, uint8_t channel) {
 
     if (freq < 1200) {
         psc_tmp = 24 - 1;
-        arr_tmp = 100 - 1;
+        arr_tmp = 100 - 1;////////
         sr_tmp  = 100000;
     }
     else if (freq <= 110000) {
         psc_tmp = 24 - 1;
-        arr_tmp = 1000 - 1;
+        arr_tmp = 10 - 1;
         sr_tmp  = 1000000;
     }
     else {
@@ -64,5 +96,6 @@ void Set_sample_rate_arr(double freq, uint8_t channel) {
     *cfg.sample_rate = sr_tmp;
     __HAL_TIM_SET_PRESCALER(cfg.htim, psc_tmp);
     __HAL_TIM_SET_AUTORELOAD(cfg.htim, arr_tmp);
-    //HAL_TIM_GenerateEvent(cfg.htim, TIM_EVENTSOURCE_UPDATE);
+    HAL_TIM_GenerateEvent(cfg.htim, TIM_EVENTSOURCE_UPDATE);
+    __HAL_TIM_SET_COUNTER(cfg.htim, 0);
 }

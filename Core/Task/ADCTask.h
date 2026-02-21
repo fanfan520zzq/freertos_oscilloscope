@@ -6,9 +6,12 @@
 #define IIT6_OSCILLISCOPE_ADC_H
 
 #include "FREQ.h"
+#include "main.h"
 
 #define CH1 1
 #define CH2 2
+#define LEN 1024
+
 
 
 
