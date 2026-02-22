@@ -14,6 +14,7 @@ void CalcFx(void);
 extern uint8_t State_CH1,State_CH2;
 extern uint32_t TIM2_Over_Cnt,TIM3_Over_Cnt;
 extern double Fx_CH1 , Fx_CH2;
+extern uint8_t over_cnt;
 
 
 #endif //ITVM_DDS_ADC_H
