@@ -4,11 +4,12 @@
 #include <adc.h>
 #include "ADCTask.h"
 #include "tim.h"
+#include "stdio.h"
+#include "usart.h"
 
 
 //osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
 
-//TIM4-CH1-PC4-PA0 TIM1-CH2-PB1-PB6
 
 uint32_t Sample_Rate_CH1 = 0 , Sample_Rate_CH2 = 0 ;
 uint8_t psc_CH1=0, psc_CH2=0;
@@ -16,6 +17,9 @@ uint16_t arr_CH1=0, arr_CH2=0;
 uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint16_t CH2_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint8_t flag_CH1=0,flag_CH2=0;
+
+float CH1_DATA[LEN];
+
 
 typedef struct {
     TIM_HandleTypeDef* htim;
@@ -26,8 +30,13 @@ typedef struct {
 
 // 在函数外部获取配置
 ADC_Channel_Cfg Get_Cfg(uint8_t channel) {
-    if (channel == CH1) return (ADC_Channel_Cfg){&htim4, &psc_CH1, &arr_CH1, &Sample_Rate_CH1};
-    return (ADC_Channel_Cfg){&htim1, &psc_CH2, &arr_CH2, &Sample_Rate_CH2};
+    if (channel == CH1) return (ADC_Channel_Cfg){&htim3, &psc_CH1, &arr_CH1, &Sample_Rate_CH1};
+    return (ADC_Channel_Cfg){&htim4, &psc_CH2, &arr_CH2, &Sample_Rate_CH2};
+}
+
+int fputc(int ch, FILE *f) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+    return ch;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
@@ -52,7 +61,15 @@ void StartADCTask(void *argument) {
     Set_sample_rate_arr(Fx_CH2,CH2);
     Start_Sample();
 
-    int k=1;
+
+    while (1) {
+        if (flag_CH2==1) {
+            for (uint16_t i = 0; i < LEN; i++) {
+                CH1_DATA[i] = (float)CH1_Buffer[i]/65535.0f*3.3f;
+                printf("%.3f\n",CH1_DATA[i]);
+            }
+        }
+    }
 
 }
 
@@ -61,8 +78,8 @@ void Start_Sample(void) {
     HAL_ADC_Stop_DMA(&hadc1);
     HAL_ADC_Stop_DMA(&hadc2);
 
-    HAL_TIM_Base_Start(&htim4);  //TIM4--CH1
-    HAL_TIM_Base_Start(&htim1);  //TIM1--CH2
+    HAL_TIM_Base_Start(&htim3);
+    HAL_TIM_Base_Start(&htim4);
     // SCB_CleanDCache_by_Addr((uint32_t*)CH1_Buffer, sizeof(CH1_Buffer));
     // SCB_CleanDCache_by_Addr((uint32_t*)CH2_Buffer, sizeof(CH2_Buffer));
     HAL_ADC_Start_DMA(&hadc1,(uint32_t*)CH1_Buffer,LEN);

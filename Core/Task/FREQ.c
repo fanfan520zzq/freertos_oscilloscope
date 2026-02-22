@@ -11,6 +11,8 @@ extern double Fx_CH1=0 , Fx_CH2=0;
 
 uint8_t over_cnt=0;
 
+void Freq_Init(void);
+
 void StartFREQTask(void *argument) {
 
     while (1) {
@@ -34,12 +36,18 @@ void StartFREQTask(void *argument) {
         uint32_t ns_full = (over_cnt*65536) + ns ;
         // 5. 计算
 
-        double fx1 = (double)nx1 * 240000000.0 / ns_full;
-        double fx2 = (double)nx2 * 240000000.0 / ns_full;
+        Fx_CH1 = (double)nx1 * 240000000.0 / ns_full;
+        Fx_CH2 = (double)nx2 * 240000000.0 / ns_full;
         osSemaphoreRelease(ADCSEMHandle);
         osDelay(10);
 
     }
 
 } //test  freq:AA 09 AD 00 00 00 00 60 01
+
+void Freq_Init(void) {
+
+
+
+}
 
