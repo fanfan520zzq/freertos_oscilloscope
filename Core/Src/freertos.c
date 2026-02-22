@@ -82,6 +82,20 @@ const osThreadAttr_t ADCTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal6,
 };
+/* Definitions for LCDTask */
+osThreadId_t LCDTaskHandle;
+const osThreadAttr_t LCDTask_attributes = {
+  .name = "LCDTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal4,
+};
+/* Definitions for FFTTask */
+osThreadId_t FFTTaskHandle;
+const osThreadAttr_t FFTTask_attributes = {
+  .name = "FFTTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal5,
+};
 /* Definitions for UARTQueue */
 osMessageQueueId_t UARTQueueHandle;
 const osMessageQueueAttr_t UARTQueue_attributes = {
@@ -121,6 +135,8 @@ extern void StartUARTTask(void *argument);
 extern void StartCMDTask(void *argument);
 extern void StartFREQTask(void *argument);
 extern void StartADCTask(void *argument);
+extern void StartLCDTask(void *argument);
+extern void StartFFTTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -182,6 +198,12 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of ADCTask */
   ADCTaskHandle = osThreadNew(StartADCTask, NULL, &ADCTask_attributes);
+
+  /* creation of LCDTask */
+  LCDTaskHandle = osThreadNew(StartLCDTask, NULL, &LCDTask_attributes);
+
+  /* creation of FFTTask */
+  FFTTaskHandle = osThreadNew(StartFFTTask, NULL, &FFTTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */

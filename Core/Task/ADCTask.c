@@ -18,7 +18,7 @@ uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((
 uint16_t CH2_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint8_t flag_CH1=0,flag_CH2=0;
 
-float CH1_DATA[LEN];
+float CH1_DATA[LEN], CH2_DATA[LEN];
 
 
 typedef struct {
@@ -34,10 +34,12 @@ ADC_Channel_Cfg Get_Cfg(uint8_t channel) {
     return (ADC_Channel_Cfg){&htim4, &psc_CH2, &arr_CH2, &Sample_Rate_CH2};
 }
 
-int fputc(int ch, FILE *f) {
+
+int __io_putchar(int ch) {
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
     return ch;
 }
+
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
     if(hadc == &hadc1){
@@ -63,11 +65,13 @@ void StartADCTask(void *argument) {
 
 
     while (1) {
-        if (flag_CH2==1) {
+        if ((flag_CH2==1)&&(flag_CH1==1)) {
             for (uint16_t i = 0; i < LEN; i++) {
                 CH1_DATA[i] = (float)CH1_Buffer[i]/65535.0f*3.3f;
-                printf("%.3f\n",CH1_DATA[i]);
+                CH2_DATA[i] = (float)CH2_Buffer[i]/65535.0f*3.3f;
+                printf("%.3f , %.3f \r\n",CH1_DATA[i],CH2_DATA[i]);
             }
+            //osSemaphoreRelease(FFTSEMHandle);
         }
     }
 

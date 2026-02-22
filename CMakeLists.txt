@@ -36,6 +36,10 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
+        Core/Task/LCD.h
+        Core/Task/LCD.c
+        Core/Task/FFTTask.c
+        Core/Task/FFTTask.h
 )
 
 # Add STM32CubeMX generated sources
@@ -58,6 +62,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Task/FREQ.h
         Core/Task/ADCTask.c
         Core/Task/ADCTask.h
+        # Drivers/CMSIS/DSP/Source
 )
 
 # Add include paths
@@ -65,6 +70,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         Core/Task
         Core/Inc
+        Drivers/CMSIS/DSP/Include
+        Drivers/CMSIS/Include
 )
 
 # Add project symbols (macros)
@@ -78,3 +85,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -u _printf_float)
+link_libraries(${CMAKE_CURRENT_SOURCE_DIR}/Drivers/CMSIS/Lib/GCC/libarm_cortexM7lfdp_math.a)
