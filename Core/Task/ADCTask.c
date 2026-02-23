@@ -71,7 +71,7 @@ void StartADCTask(void *argument) {
                 CH2_DATA[i] = (float)CH2_Buffer[i]/65535.0f*3.3f;
                 printf("%.3f , %.3f \r\n",CH1_DATA[i],CH2_DATA[i]);
             }
-            //osSemaphoreRelease(FFTSEMHandle);
+            osSemaphoreRelease(FFTSEMHandle);
         }
     }
 
