@@ -6,7 +6,7 @@
 #define IIT6_OSCILLISCOPE_FFT_H
 
 #include "FFTTask.h"
-
+#include "MSG.h"
 
 
 

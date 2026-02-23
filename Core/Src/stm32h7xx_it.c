@@ -59,6 +59,7 @@ extern DMA_HandleTypeDef hdma_adc1;
 extern DMA_HandleTypeDef hdma_adc2;
 extern DMA_HandleTypeDef hdma_dac1_ch1;
 extern DMA_HandleTypeDef hdma_dac1_ch2;
+extern TIM_HandleTypeDef htim13;
 extern TIM_HandleTypeDef htim15;
 extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim8;
@@ -244,6 +245,7 @@ void TIM8_UP_TIM13_IRQHandler(void)
 
   /* USER CODE END TIM8_UP_TIM13_IRQn 0 */
   HAL_TIM_IRQHandler(&htim8);
+  HAL_TIM_IRQHandler(&htim13);
   /* USER CODE BEGIN TIM8_UP_TIM13_IRQn 1 */
 
   /* USER CODE END TIM8_UP_TIM13_IRQn 1 */

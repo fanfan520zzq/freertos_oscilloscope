@@ -2,12 +2,15 @@
 // Created by Lenovo on 2026/2/14.
 //
 
+#include <stdbool.h>
+
 #include "DDS.h"
 #include "MSG.h"
 #include "FREQ.h"
 
 
 
+uint8_t g_is_adc_continuous = 1;
 
 
 void StartCMDTask(void *argument) {   //PA4 PA5
@@ -15,7 +18,7 @@ void StartCMDTask(void *argument) {   //PA4 PA5
     DDS_Init();  //初始化ROM
 
     HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_1);
-
+    HAL_TIM_PWM_Start(&htim13, TIM_CHANNEL_1);
 
     while (1) {
         if (osMessageQueueGet(MSGQueueHandle,&MSG,0,osWaitForever)==osOK) {
@@ -35,11 +38,15 @@ void StartCMDTask(void *argument) {   //PA4 PA5
                     break;
                 }
                 case ADC_ON: {
-                    osSemaphoreRelease(FreqSEMHandle);
+                    if (g_is_adc_continuous != 1) {
+                        g_is_adc_continuous=1;
+                        osSemaphoreRelease(FreqSEMHandle);
+                    }
+
                     break;
                 }
                 case ADC_OFF: {
-                    int k=1;
+                    g_is_adc_continuous = 0;
                     break;
                 }
                     //default: DDS_Stop();

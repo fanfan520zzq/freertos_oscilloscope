@@ -26,5 +26,7 @@ typedef  struct {
 extern APP_Text msg;
 
 
+extern uint8_t g_is_adc_continuous;
+
 
 #endif //RTOS0_0_DDS_H

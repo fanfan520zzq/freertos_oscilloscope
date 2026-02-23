@@ -17,6 +17,7 @@ uint16_t arr_CH1=0, arr_CH2=0;
 uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint16_t CH2_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint8_t flag_CH1=0,flag_CH2=0;
+uint8_t CH1_LCD[LEN], CH2_LCD[LEN];
 
 float CH1_DATA[LEN], CH2_DATA[LEN];
 
@@ -35,10 +36,7 @@ ADC_Channel_Cfg Get_Cfg(uint8_t channel) {
 }
 
 
-int __io_putchar(int ch) {
-    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
-    return ch;
-}
+
 
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
@@ -52,27 +50,35 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
         HAL_ADC_Stop(&hadc2);
         flag_CH2=1;
     }
+    if (flag_CH1 && flag_CH2) {
+        osSemaphoreRelease(ADCFinishedSemHandle);
+    }
 }
 
 void Start_Sample(void);
 void Set_sample_rate_arr(double freq, uint8_t channel);
-
+void LCD_Convert(void);
 void StartADCTask(void *argument) {
-    osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
-    Set_sample_rate_arr(Fx_CH1,CH1);
-    Set_sample_rate_arr(Fx_CH2,CH2);
-    Start_Sample();
+
 
 
     while (1) {
-        if ((flag_CH2==1)&&(flag_CH1==1)) {
-            for (uint16_t i = 0; i < LEN; i++) {
-                CH1_DATA[i] = (float)CH1_Buffer[i]/65535.0f*3.3f;
-                CH2_DATA[i] = (float)CH2_Buffer[i]/65535.0f*3.3f;
-                printf("%.3f , %.3f \r\n",CH1_DATA[i],CH2_DATA[i]);
-            }
-            osSemaphoreRelease(FFTSEMHandle);
+        osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
+        Set_sample_rate_arr(Fx_CH1,CH1);
+        Set_sample_rate_arr(Fx_CH2,CH2);
+        Start_Sample();
+
+
+
+        for (uint16_t i = 0; i < LEN; i++) {
+            CH1_DATA[i] = (float)CH1_Buffer[i]/65535.0f*3.3f-1.65f;
+            CH2_DATA[i] = (float)CH2_Buffer[i]/65535.0f*3.3f-1.65f;//printf("%.3f , %.3f \r\n",CH1_DATA[i],CH2_DATA[i]);
         }
+        LCD_Convert();
+        flag_CH1=0; flag_CH2=0;
+
+        osSemaphoreRelease(FFTSEMHandle);
+
     }
 
 }
@@ -119,4 +125,13 @@ void Set_sample_rate_arr(double freq, uint8_t channel) {
     __HAL_TIM_SET_AUTORELOAD(cfg.htim, arr_tmp);
     HAL_TIM_GenerateEvent(cfg.htim, TIM_EVENTSOURCE_UPDATE);
     __HAL_TIM_SET_COUNTER(cfg.htim, 0);
+}
+
+
+void LCD_Convert(void) {
+    for (uint16_t i = 0; i < LEN; i++) {
+        CH1_LCD[i] = (CH1_Buffer[i]>>9)+60;
+        CH2_LCD[i] = (CH2_Buffer[i]>>9)+60;
+    }
+
 }

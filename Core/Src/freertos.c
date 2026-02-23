@@ -93,7 +93,7 @@ const osThreadAttr_t LCDTask_attributes = {
 osThreadId_t FFTTaskHandle;
 const osThreadAttr_t FFTTask_attributes = {
   .name = "FFTTask",
-  .stack_size = 128 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal5,
 };
 /* Definitions for UARTQueue */
@@ -120,6 +120,16 @@ const osSemaphoreAttr_t ADCSEM_attributes = {
 osSemaphoreId_t FFTSEMHandle;
 const osSemaphoreAttr_t FFTSEM_attributes = {
   .name = "FFTSEM"
+};
+/* Definitions for ADCFinishedSem */
+osSemaphoreId_t ADCFinishedSemHandle;
+const osSemaphoreAttr_t ADCFinishedSem_attributes = {
+  .name = "ADCFinishedSem"
+};
+/* Definitions for LCDSEM */
+osSemaphoreId_t LCDSEMHandle;
+const osSemaphoreAttr_t LCDSEM_attributes = {
+  .name = "LCDSEM"
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -163,6 +173,12 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of FFTSEM */
   FFTSEMHandle = osSemaphoreNew(1, 0, &FFTSEM_attributes);
+
+  /* creation of ADCFinishedSem */
+  ADCFinishedSemHandle = osSemaphoreNew(1, 0, &ADCFinishedSem_attributes);
+
+  /* creation of LCDSEM */
+  LCDSEMHandle = osSemaphoreNew(1, 0, &LCDSEM_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */

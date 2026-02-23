@@ -14,5 +14,6 @@
 
 extern float CH1_DATA[LEN], CH2_DATA[LEN];
 extern uint32_t Sample_Rate_CH1, Sample_Rate_CH2;
+extern uint8_t CH1_LCD[LEN], CH2_LCD[LEN];
 
 #endif //IIT6_OSCILLISCOPE_ADC_H

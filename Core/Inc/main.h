@@ -41,6 +41,8 @@ extern  osMessageQueueId_t UARTQueueHandle;
 extern  osSemaphoreId_t FreqSEMHandle;
 extern  osSemaphoreId_t ADCSEMHandle;
 extern  osSemaphoreId_t FFTSEMHandle;
+extern  osSemaphoreId_t ADCFinishedSemHandle;
+extern  osSemaphoreId_t LCDSEMHandle;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
