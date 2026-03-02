@@ -17,8 +17,17 @@ void StartFREQTask(void *argument) {
 
     while (1) {
         osSemaphoreAcquire(FreqSEMHandle,osWaitForever);
+        Fx_CH1=0; Fx_CH2=0;
         over_cnt=0;
         // 1. 准备：清零并开启 Slave（此时由于闸门关着，它们不会动）
+        HAL_TIM_Base_Stop(&htim2);
+        HAL_TIM_Base_Stop(&htim5);
+        HAL_TIM_Base_Stop_IT(&htim15);
+        HAL_TIM_Base_Stop(&htim1);
+        __HAL_TIM_SET_COUNTER(&htim2,0);
+        __HAL_TIM_SET_COUNTER(&htim5,0);
+        __HAL_TIM_SET_COUNTER(&htim15,0);
+        __HAL_TIM_SET_COUNTER(&htim1,0);
         HAL_TIM_Base_Start(&htim2);
         HAL_TIM_Base_Start(&htim5);
         HAL_TIM_Base_Start_IT(&htim15);
@@ -38,6 +47,10 @@ void StartFREQTask(void *argument) {
 
         Fx_CH1 = (double)nx1 * 240000000.0 / ns_full;
         Fx_CH2 = (double)nx2 * 240000000.0 / ns_full;
+        //
+        // __HAL_TIM_SET_COUNTER(&htim2,0);
+        // __HAL_TIM_SET_COUNTER(&htim5,0);
+        // __HAL_TIM_SET_COUNTER(&htim15,0);
         osSemaphoreRelease(ADCSEMHandle);
         osDelay(10);
 

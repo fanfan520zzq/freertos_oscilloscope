@@ -57,6 +57,10 @@ void StartFFTTask(void *argument) {
 }
 
 void Get_VPP(void) {
+    memset(CH1_VPP, 0, sizeof(CH1_VPP));
+    memset(CH2_VPP, 0, sizeof(CH2_VPP));
+    memset(CH1_FREQ, 0, sizeof(CH1_FREQ));
+    memset(CH2_FREQ, 0, sizeof(CH2_FREQ));
     float32_t maxVal, minVal;
     uint32_t maxIdx, minIdx;
     arm_max_f32(CH1_DATA, LEN, &maxVal, &maxIdx);
@@ -81,6 +85,9 @@ float findMaxInRange(float arr[], uint32_t start, uint32_t end);
 
 
 void Type_recognition(void) {
+    memset(CH1_TYPE, 0, sizeof(CH1_TYPE));
+    memset(CH2_TYPE, 0, sizeof(CH2_TYPE));
+
     float maxVal;
     uint32_t Fundmental_idx;
     arm_max_f32(&CH1_MAG[1], (LEN/2)-1, &maxVal, &Fundmental_idx);

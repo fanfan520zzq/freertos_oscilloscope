@@ -51,7 +51,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
         flag_CH2=1;
     }
     if (flag_CH1 && flag_CH2) {
-        osSemaphoreRelease(ADCFinishedSemHandle);
+        osSemaphoreRelease(FFTSEMHandle);
     }
 }
 
@@ -77,7 +77,7 @@ void StartADCTask(void *argument) {
         LCD_Convert();
         flag_CH1=0; flag_CH2=0;
 
-        osSemaphoreRelease(FFTSEMHandle);
+
 
     }
 

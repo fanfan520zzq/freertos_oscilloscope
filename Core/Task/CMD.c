@@ -16,6 +16,7 @@ uint8_t g_is_adc_continuous = 1;
 void StartCMDTask(void *argument) {   //PA4 PA5
     APP_Text* MSG;
     DDS_Init();  //初始化ROM
+    g_is_adc_continuous = 0;
 
     HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_1);
     HAL_TIM_PWM_Start(&htim13, TIM_CHANNEL_1);

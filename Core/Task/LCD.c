@@ -42,7 +42,7 @@ void StartLCDTask(void *argument) {
             }
             fflush(stdout);
 
-            osDelay(5000);
+            osDelay(3000);
 
             // 链路闭环：再次释放第一个信号量，开启新一轮采样过程
             osSemaphoreRelease(FreqSEMHandle);
