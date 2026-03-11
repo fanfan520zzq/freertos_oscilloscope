@@ -59,12 +59,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Task/CMD.c
         Core/Task/DDS.c
         Core/Task/DDS.h
-        Core/Task/FREQ.c
-        Core/Task/FREQ.h
+
         Core/Task/ADCTask.c
         Core/Task/ADCTask.h
-        Core/Task/LCD.h
-        Core/Task/LCD.c
+
         Core/Task/FFTTask.c
         Core/Task/FFTTask.h
 )

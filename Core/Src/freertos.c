@@ -68,26 +68,12 @@ const osThreadAttr_t CMDTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for FREQTask */
-osThreadId_t FREQTaskHandle;
-const osThreadAttr_t FREQTask_attributes = {
-  .name = "FREQTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal7,
-};
 /* Definitions for ADCTask */
 osThreadId_t ADCTaskHandle;
 const osThreadAttr_t ADCTask_attributes = {
   .name = "ADCTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal6,
-};
-/* Definitions for LCDTask */
-osThreadId_t LCDTaskHandle;
-const osThreadAttr_t LCDTask_attributes = {
-  .name = "LCDTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal4,
 };
 /* Definitions for FFTTask */
 osThreadId_t FFTTaskHandle;
@@ -106,11 +92,6 @@ osMessageQueueId_t MSGQueueHandle;
 const osMessageQueueAttr_t MSGQueue_attributes = {
   .name = "MSGQueue"
 };
-/* Definitions for FreqSEM */
-osSemaphoreId_t FreqSEMHandle;
-const osSemaphoreAttr_t FreqSEM_attributes = {
-  .name = "FreqSEM"
-};
 /* Definitions for ADCSEM */
 osSemaphoreId_t ADCSEMHandle;
 const osSemaphoreAttr_t ADCSEM_attributes = {
@@ -126,11 +107,6 @@ osSemaphoreId_t ADCFinishedSemHandle;
 const osSemaphoreAttr_t ADCFinishedSem_attributes = {
   .name = "ADCFinishedSem"
 };
-/* Definitions for LCDSEM */
-osSemaphoreId_t LCDSEMHandle;
-const osSemaphoreAttr_t LCDSEM_attributes = {
-  .name = "LCDSEM"
-};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -143,9 +119,7 @@ extern void StartADCTask(void *argument);
 void StartDefaultTask(void *argument);
 extern void StartUARTTask(void *argument);
 extern void StartCMDTask(void *argument);
-extern void StartFREQTask(void *argument);
 extern void StartADCTask(void *argument);
-extern void StartLCDTask(void *argument);
 extern void StartFFTTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -165,9 +139,6 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
-  /* creation of FreqSEM */
-  FreqSEMHandle = osSemaphoreNew(1, 0, &FreqSEM_attributes);
-
   /* creation of ADCSEM */
   ADCSEMHandle = osSemaphoreNew(1, 0, &ADCSEM_attributes);
 
@@ -176,9 +147,6 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of ADCFinishedSem */
   ADCFinishedSemHandle = osSemaphoreNew(1, 0, &ADCFinishedSem_attributes);
-
-  /* creation of LCDSEM */
-  LCDSEMHandle = osSemaphoreNew(1, 0, &LCDSEM_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -209,14 +177,8 @@ void MX_FREERTOS_Init(void) {
   /* creation of CMDTask */
   CMDTaskHandle = osThreadNew(StartCMDTask, NULL, &CMDTask_attributes);
 
-  /* creation of FREQTask */
-  FREQTaskHandle = osThreadNew(StartFREQTask, NULL, &FREQTask_attributes);
-
   /* creation of ADCTask */
   ADCTaskHandle = osThreadNew(StartADCTask, NULL, &ADCTask_attributes);
-
-  /* creation of LCDTask */
-  LCDTaskHandle = osThreadNew(StartLCDTask, NULL, &LCDTask_attributes);
 
   /* creation of FFTTask */
   FFTTaskHandle = osThreadNew(StartFFTTask, NULL, &FFTTask_attributes);

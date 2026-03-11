@@ -29,7 +29,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "FREQ.h"
+#include "MSG.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,7 +104,6 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_DAC1_Init();
-  MX_TIM2_Init();
   MX_TIM6_Init();
   MX_TIM7_Init();
   MX_USART1_UART_Init();
@@ -112,9 +111,6 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM4_Init();
   MX_TIM12_Init();
-  MX_TIM5_Init();
-  MX_TIM1_Init();
-  MX_TIM15_Init();
   MX_ADC2_Init();
   MX_TIM13_Init();
   /* USER CODE BEGIN 2 */
@@ -271,9 +267,7 @@ void MPU_Config(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-  if (htim -> Instance == TIM15) {
-    over_cnt++;
-  }
+
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM8)
   {

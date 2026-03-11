@@ -6,7 +6,7 @@
 
 #include "DDS.h"
 #include "MSG.h"
-#include "FREQ.h"
+
 
 
 
@@ -41,7 +41,7 @@ void StartCMDTask(void *argument) {   //PA4 PA5
                 case ADC_ON: {
                     if (g_is_adc_continuous != 1) {
                         g_is_adc_continuous=1;
-                        osSemaphoreRelease(FreqSEMHandle);
+                        osSemaphoreRelease(ADCSEMHandle);
                     }
 
                     break;
