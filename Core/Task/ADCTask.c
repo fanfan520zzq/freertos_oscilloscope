@@ -4,14 +4,11 @@
 #include <adc.h>
 #include "ADCTask.h"
 #include "tim.h"
-#include "stdio.h"
-
 
 
 uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint16_t CH2_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
 uint8_t flag_CH1=0,flag_CH2=0;
-
 
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
@@ -32,15 +29,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 
 void Start_Sample(void);
 void StartADCTask(void *argument) {
-
     while (1) {
         osSemaphoreAcquire(ADCSEMHandle,osWaitForever);
-
         flag_CH1=0; flag_CH2=0;
         Start_Sample();
-
-
-
     }
 
 }

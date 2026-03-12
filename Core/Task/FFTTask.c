@@ -5,7 +5,6 @@
 #include "FFTTask.h"
 #define ARM_MATH_CM7  // 必须在包含头文件前定义
 #include "arm_math.h"
-
 #include "stdio.h"
 #include "string.h"
 #include "usart.h"
@@ -31,20 +30,17 @@ typedef struct {
     uint16_t min;
     uint16_t mid;
 }ADC_Stat_t;
-
+ADC_Stat_t CHANNEL_1,CHANNEL_2;
 float CH1_FREQ=0,CH2_FREQ=0;
 float CH1_VPP=0,CH2_VPP=0;
 
 
 ADC_Stat_t Find_Stats(uint16_t *data, uint16_t len);
-ADC_Stat_t CHANNEL_1,CHANNEL_2;
 void Hanning_Init(void);
 void P2P_Analysis(void);
 float Measure_Frequency_Software(uint16_t* buffer, uint32_t len, float sample_rate, uint16_t v_mid) ;
 float findMaxInRange(float *buffer,uint32_t bg,uint32_t ed);
 void Type_recognition(void);
-
-
 
 
 void StartFFTTask(void *argument) {
@@ -59,10 +55,8 @@ void StartFFTTask(void *argument) {
 
     while (1) {
         osSemaphoreAcquire(FFTSEMHandle,osWaitForever);
-
-
         P2P_Analysis();
-
+        //freq_analysis
         CH1_FREQ = Measure_Frequency_Software(CH1_Buffer, LEN , RATE , CHANNEL_1.mid) ;
         CH2_FREQ = Measure_Frequency_Software(CH2_Buffer, LEN , RATE , CHANNEL_2.mid) ;
 
@@ -74,20 +68,24 @@ void StartFFTTask(void *argument) {
         // for (uint16_t i = 0; i < LEN/2; i++) {
         //     printf("%.3f \n",CH2_FLT[i]);
         // }
+
+
+        //FFT
         arm_mult_f32(CH1_FLT, hanning_window, CH1_IN, LEN);
         arm_mult_f32(CH2_FLT, hanning_window, CH2_IN, LEN);
         arm_rfft_fast_f32(&S,CH1_IN, CH1_OUT, 0);
         arm_rfft_fast_f32(&S,CH2_IN, CH2_OUT, 0);
         CH1_MAG[0]=fabsf(CH1_OUT[0]);
         CH2_MAG[0]=fabsf(CH2_OUT[0]);
-
         arm_cmplx_mag_f32(&CH1_OUT[2], &CH1_MAG[1], (LEN / 2)-1);
         arm_cmplx_mag_f32(&CH2_OUT[2], &CH2_MAG[1], (LEN / 2)-1);
-
         CH1_MAG[LEN/2]=fabsf(CH1_OUT[1]);
         CH2_MAG[LEN/2]=fabsf(CH2_OUT[1]);
 
+
         Type_recognition();
+
+
         CH1_VPP = (float)(CHANNEL_1.max - CHANNEL_1.min) * ADC_TO_V ;
         CH2_VPP = (float)(CHANNEL_2.max - CHANNEL_2.min) * ADC_TO_V ;
 
@@ -105,7 +103,6 @@ void StartFFTTask(void *argument) {
 }
 
 void P2P_Analysis() {
-
     CHANNEL_1 = Find_Stats(CH1_Buffer,LEN);
     CHANNEL_2 = Find_Stats(CH2_Buffer,LEN);
 }
