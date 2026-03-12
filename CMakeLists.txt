@@ -40,6 +40,8 @@ set(DSP_LIB_FILE "${CMAKE_SOURCE_DIR}/Middlewares/ST/ARM/DSP/Lib/libarm_cortexM7
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
+        Core/Task/LCD.c
+        Core/Task/LCD.h
 
 )
 

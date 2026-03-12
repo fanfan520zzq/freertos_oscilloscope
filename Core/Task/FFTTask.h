@@ -7,7 +7,8 @@
 
 
 #include "ADCTask.h"
+#include "MSG.h"
 
-
+#include "LCD.h"
 
 #endif //IIT6_OSCILLISCOPE_FFTTASK_H
