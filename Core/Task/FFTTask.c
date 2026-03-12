@@ -10,7 +10,7 @@
 #include "string.h"
 #include "usart.h"
 
-#define RATE 200000000
+#define RATE 2000000.0f
 
 int __io_putchar(int ch) {
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
@@ -46,6 +46,8 @@ void StartFFTTask(void *argument) {
     memset(&CHANNEL_1,0,sizeof(ADC_Stat_t));
     memset(&CHANNEL_2,0,sizeof(ADC_Stat_t));
 
+    const float32_t ADC_TO_V = 3.3f / 65535.0f; // 预乘系数
+
     while (1) {
         osSemaphoreAcquire(FFTSEMHandle,osWaitForever);
 
@@ -55,8 +57,9 @@ void StartFFTTask(void *argument) {
         CH1_FREQ = Measure_Frequency_Software(CH1_Buffer, LEN , RATE , CHANNEL_1.mid) ;
         CH2_FREQ = Measure_Frequency_Software(CH2_Buffer, LEN , RATE , CHANNEL_2.mid) ;
 
-        for (uint16_t i = 0 ; i<=LEN ;i++) {
-            CH1_FLT[i] = (float)CH1_Buffer[i] / 65535.0f * 3.3f;
+        for (uint16_t i = 0 ; i< LEN ;i++) {
+            CH1_FLT[i] = (float)CH1_Buffer[i] * ADC_TO_V;
+            CH2_FLT[i] = (float)CH2_Buffer[i] * ADC_TO_V;
         }
         arm_mult_f32(CH1_FLT, hanning_window, CH1_IN, LEN);
         arm_mult_f32(CH2_FLT, hanning_window, CH2_IN, LEN);
@@ -126,34 +129,13 @@ float Measure_Frequency_Software(uint16_t* buffer, uint32_t len, float sample_ra
 
     return freq;
 }
-// void Get_VPP(void) {
-//     memset(CH1_VPP, 0, sizeof(CH1_VPP));
-//     memset(CH2_VPP, 0, sizeof(CH2_VPP));
-//     memset(CH1_FREQ, 0, sizeof(CH1_FREQ));
-//     memset(CH2_FREQ, 0, sizeof(CH2_FREQ));
-//     float32_t maxVal, minVal;
-//     uint32_t maxIdx, minIdx;
-//     arm_max_f32(CH1_DATA, LEN, &maxVal, &maxIdx);
-//     arm_min_f32(CH1_DATA, LEN, &minVal, &minIdx);
-//     sprintf(CH1_VPP,"%f",maxVal-minVal);
-//
-//     arm_max_f32(CH2_DATA, LEN, &maxVal, &maxIdx);
-//     arm_min_f32(CH2_DATA, LEN, &minVal, &minIdx);
-//     sprintf(CH2_VPP,"%f",maxVal-minVal);
-//
-//     sprintf(CH1_FREQ,"%f",Fx_CH1);
-//     sprintf(CH2_FREQ,"%f",Fx_CH2);
-// }
-//
 void Hanning_Init(void) {
     for (int i = 0; i < LEN; i++) {
         // 汉宁窗公式: 0.5 * (1 - cos(2*PI*i / (LEN-1)))
         hanning_window[i] = 0.5f * (1.0f - arm_cos_f32(2.0f * PI * i / (float32_t)(LEN - 1)));
     }
 }
-// float findMaxInRange(float arr[], uint32_t start, uint32_t end);
-//
-//
+
 // void Type_recognition(void) {
 //     memset(CH1_TYPE, 0, sizeof(CH1_TYPE));
 //     memset(CH2_TYPE, 0, sizeof(CH2_TYPE));
@@ -184,17 +166,7 @@ void Hanning_Init(void) {
 //     else if (CH2_ratio<0.25f)  strcpy(CH2_TYPE, "triangle");
 //     else if (CH2_ratio>0.25f)  strcpy(CH2_TYPE, "square");
 // }
-//
-//
-// float findMaxInRange(float arr[], uint32_t start, uint32_t end) {
-//     float max = arr[start];  // 初始化为区间第一个元素
-//     for (uint16_t i = start + 1; i <= end; i++) {
-//         if (arr[i] > max) {
-//             max = arr[i];
-//         }
-//     }
-//     return max;
-// }
+
 
 
 ADC_Stat_t Find_Stats(uint16_t *data, uint16_t len) {
