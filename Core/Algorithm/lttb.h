@@ -1,0 +1,8 @@
+//
+// Created by Lenovo on 2026/3/18.
+//
+
+#ifndef IIT6_OSCILLISCOPE_LTTB_H
+#define IIT6_OSCILLISCOPE_LTTB_H
+
+#endif //IIT6_OSCILLISCOPE_LTTB_H
