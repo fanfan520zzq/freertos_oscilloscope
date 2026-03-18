@@ -91,8 +91,8 @@ void StartFFTTask(void *argument) {
 
 
 
-        LCD_Output(CH1_TYPE, CHANNEL_1.max - CHANNEL_1.min,CH1,CH1_FREQ);
-        LCD_Output(CH2_TYPE, CHANNEL_2.max - CHANNEL_2.min,CH2,CH2_FREQ);
+        // LCD_Output(CH1_TYPE, CHANNEL_1.max - CHANNEL_1.min,CH1,CH1_FREQ);
+        // LCD_Output(CH2_TYPE, CHANNEL_2.max - CHANNEL_2.min,CH2,CH2_FREQ);
         HAL_Delay(1000);
 
         if (g_is_adc_continuous == 1) {
@@ -101,6 +101,23 @@ void StartFFTTask(void *argument) {
 
     }
 }
+
+// FFTTask.c 里实现
+// 找第一个上升过零点，返回其索引
+// 找不到返回 0（退化成从头显示，总是安全的）
+uint32_t Find_Rising_Edge(const float *buf, uint32_t len,
+                           float v_mid, float vpp) {
+    float hyst = vpp * 0.05f;   // 5% VPP 做迟滞
+    if (hyst < 0.02f) hyst = 0.02f;   // 最小 20mV，防止噪声乱触发
+
+    int ready = 0;
+    for (uint32_t i = 0; i + 1 < len; i++) {
+        if (buf[i] < (v_mid - hyst)) ready = 1;
+        if (ready && buf[i] < v_mid && buf[i + 1] >= v_mid) return i;
+    }
+    return 0;
+}
+
 
 void P2P_Analysis() {
     CHANNEL_1 = Find_Stats(CH1_Buffer,LEN);

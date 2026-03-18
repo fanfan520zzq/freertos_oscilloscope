@@ -42,6 +42,10 @@ set(DSP_LIB_FILE "${CMAKE_SOURCE_DIR}/Middlewares/ST/ARM/DSP/Lib/libarm_cortexM7
 add_executable(${CMAKE_PROJECT_NAME}
         Core/Task/LCD.c
         Core/Task/LCD.h
+        Core/Algorithm/lttb.c
+        Core/Algorithm/lttb.h
+        Core/Algorithm/protocol.c
+        Core/Algorithm/protocol.h
 
 )
 
@@ -67,6 +71,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
         Core/Task/FFTTask.c
         Core/Task/FFTTask.h
+
+
+        Core/Task/LCD.c
+        Core/Task/LCD.h
+        Core/Algorithm/lttb.c
+        Core/Algorithm/lttb.h
+        Core/Algorithm/protocol.c
+        Core/Algorithm/protocol.h
 )
 
 
@@ -78,6 +90,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         Core/Task
         Core/Inc
+        Core/Algorithm
         Drivers/CMSIS/DSP/Include
         Drivers/CMSIS/Include
         Middlewares/ST/ARM/DSP/Inc

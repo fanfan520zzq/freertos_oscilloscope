@@ -11,4 +11,12 @@
 
 #include "LCD.h"
 
+
+
+
+
+
+uint32_t Find_Rising_Edge(const float *buf, uint32_t len,
+                           float v_mid, float vpp);
+
 #endif //IIT6_OSCILLISCOPE_FFTTASK_H
