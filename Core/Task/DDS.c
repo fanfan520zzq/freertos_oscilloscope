@@ -15,8 +15,8 @@ static uint16_t Buffer1_Len,Buffer2_Len;
 
 void DDS_Init(void)
 {
-    const uint16_t MAX_VAL = 1241;    // 1V 对应的数字量
-    const float MID_VAL = 620.5f;     // 中点值 (1241 / 2)
+    const uint16_t MAX_VAL = 1309;    // 1V 对应的数字量
+    const float MID_VAL = 654.5f;     // 中点值 (1241 / 2)
     for(uint16_t i = 0; i < 1024; i++)
     {
         SinBuffer[i] = (uint16_t)(MID_VAL + MID_VAL * sinf((2.0f * 3.1415926f * i) / 1024.0f));
@@ -86,7 +86,9 @@ void DDS2_Update_DATA(uint16_t freq,uint16_t vpp,uint8_t waveType){//vpp 0-1000
         }
         phase_index2+=FTW2;
 
-        SCB_CleanDCache_by_Addr((uint32_t*)Buffer2, (uint32_t)Buffer2_Len);
-        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_2, (uint32_t*)Buffer2, Buffer2_Len, DAC_ALIGN_12B_R);
+
     }
+    SCB_CleanDCache_by_Addr((uint32_t*)Buffer2, (uint32_t)Buffer2_Len-1);
+    HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_2, (uint32_t*)Buffer2, Buffer2_Len, DAC_ALIGN_12B_R);
+
 }

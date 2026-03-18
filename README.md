@@ -1,23 +1,24 @@
-## STM32-RX
-|head|length|command|freq|Vpp|Wave|校验
-|-|-|-|-|-|-|-|
-|AA|3|AD(ADC_on)|||0/1/2|
-|||AE(ADC_off)|
-||9|D1(DAC1_on)|1-50(整数)|0-1000(整数,2Byte)
-|||D2(DAC2_on)
-|||DA(DAC1_off)
-|||DB(DAC2_off)
-    sine-0,square-1,triangle-2
+
+
+
 
 
 ## 统一帧格式
-#### ADC MODE
 
-    AA 09 AD/AE 00 00 00 00 EXbyte 
 
-#### DDS MODE
+|0xAA|0x0A|OP|FREQ|VPP|WAVE|CRC16|
+|---|---|---|---|---|---|---|
+|1byte|1byte|1byte|2bytes|2bytes|1byte|2bytes|
 
-    AA 09 D1/D2 XX XX XX XX EXbyte
+
+## 波形
+
+0-DC
+1-SINE
+2-SQUARE
+3-TRIANGLE
+
+
 
 ## LCD-RX
 只有adc情况下会向lcd发信，直接发命令
