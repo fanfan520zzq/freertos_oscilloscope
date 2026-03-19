@@ -12,9 +12,11 @@ static uint8_t *tx_front = tx_buf_a;   // 正在发送
 static uint8_t *tx_back  = tx_buf_b;   // 正在填充
 
 static inline void lcd_wait_dma(void) {
-    // 简单轮询；电赛中可改为 osSemaphoreAcquire(lcd_dma_sem, 10)
-    while (HAL_UART_GetState(&huart1) & HAL_UART_STATE_BUSY_TX) {
-        osDelay(1);
+    uint32_t timeout = HAL_GetTick() + 100;
+    while ((huart1.gState & HAL_UART_STATE_BUSY_TX)
+           && HAL_GetTick() < timeout)
+    {
+        __NOP();
     }
 }
 
@@ -22,7 +24,7 @@ static inline void lcd_wait_dma(void) {
 static void lcd_send_raw(const uint8_t *data, uint16_t len) {
     lcd_wait_dma();
     memcpy(tx_front, data, len);
-    SCB_CleanDCache_by_Addr((uint32_t*)tx_front, len);
+    // SCB_CleanDCache_by_Addr((uint32_t*)tx_front, len);
     HAL_UART_Transmit_DMA(&huart1, tx_front, len);
     // 交换缓冲（下次填充另一块，不影响本次 DMA）
     uint8_t *tmp = tx_front;
@@ -48,10 +50,10 @@ void LCD_Update_Stats(float ch1_freq, float ch1_vpp, uint8_t ch1_type,
                       float ch2_freq, float ch2_vpp, uint8_t ch2_type) {
     // 频率用 0.1Hz 精度存成整数，避免浮点格式化
     lcd_cmd("va0.val=%d", (int)(ch1_freq * 10));
-    lcd_cmd("va1.val=%d", (int)(ch1_vpp * 1000));   // mV
+    lcd_cmd("va1.val=%d", (int)(ch1_vpp ));
     lcd_cmd("va2.val=%d", ch1_type);
     lcd_cmd("va3.val=%d", (int)(ch2_freq * 10));
-    lcd_cmd("va4.val=%d", (int)(ch2_vpp * 1000));
+    lcd_cmd("va4.val=%d", (int)(ch2_vpp ));
     lcd_cmd("va5.val=%d", ch2_type);
 }
 
@@ -99,7 +101,8 @@ void LCD_Update_Waves(uint8_t Type, uint16_t Amplitude, uint8_t CH, float freq) 
 
     // 发送波形数据
     lcd_cmd("addt %d,%d,%d", LCD_COMP_WAVE, CH, LCD_WAVE_POINTS);
-
-    // 3. 发原始字节（无 \xFF 分隔符） 没问题
+    osDelay(10);
+    // 3. 发原始字节（    无 \xFF 分隔符） 没问题
     lcd_send_raw(wave_buffer, LCD_WAVE_POINTS);
+    int a=1;
 }

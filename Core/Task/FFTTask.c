@@ -1,224 +1,494 @@
-//
-// Created by Lenovo on 2026/2/22.
-//
+/**
+ * @file    FFTTask.c
+ * @brief   Dual-channel FFT analysis + LCD update task for STM32H7 oscilloscope
+ *
+ * Processing pipeline (each frame):
+ *   1. Wait for ADC semaphore (new frame ready)
+ *   2. Compute per-channel statistics (min / max / mid)
+ *   3. Measure fundamental frequency via zero-crossing counting
+ *   4. Convert to float, remove DC offset
+ *   5. Apply Hanning window and run CMSIS-DSP real FFT
+ *   6. Compute magnitude spectrum
+ *   7. Classify waveform type (SINE / SQUARE / TRIANGLE / DC)
+ *   8. Compute Vpp
+ *   9. Push results to LCD (stats + waveform preview)
+ *  10. Release ADC semaphore for the next acquisition
+ */
+
+#define ARM_MATH_CM7          /* Must be defined before arm_math.h */
+#include "arm_math.h"
 
 #include "FFTTask.h"
-#define ARM_MATH_CM7  // 必须在包含头文件前定义
-#include "arm_math.h"
-#include "stdio.h"
-#include "string.h"
 #include "usart.h"
+#include <stdio.h>
+#include <string.h>
 
-#define RATE 2000000.0f
+/* =========================================================================
+ * Compile-time configuration
+ * ========================================================================= */
 
-int __io_putchar(int ch) {
+/** ADC sample rate [Hz] */
+#define SAMPLE_RATE_HZ          2000000.0f
+
+/** ADC full-scale reference voltage [V] */
+#define ADC_VREF                3.3f
+
+/** ADC resolution (16-bit) */
+#define ADC_FULL_SCALE          65535.0f
+
+/** Precomputed voltage per ADC count */
+#define ADC_LSB_VOLTAGE         (ADC_VREF / ADC_FULL_SCALE)
+
+/**
+ * Zero-crossing hysteresis as a fraction of Vpp.
+ * Prevents noise from triggering spurious crossings.
+ */
+#define ZERO_CROSS_HYST_RATIO   0.05f
+
+/** Minimum absolute hysteresis [V] – floor for very small signals */
+#define ZERO_CROSS_HYST_MIN_V   0.02f
+
+/**
+ * 3rd-harmonic / fundamental ratio thresholds for waveform classification.
+ *
+ *   ratio < SINE_THRESHOLD           → SINE
+ *   ratio < TRIANGLE_THRESHOLD       → TRIANGLE
+ *   ratio > DC_THRESHOLD             → DC  (flat / constant signal)
+ *   otherwise                        → SQUARE
+ *
+ * These map directly to the type constants in LCD.h.
+ */
+#define SINE_THRESHOLD          0.06f
+#define TRIANGLE_THRESHOLD      0.18f
+#define DC_THRESHOLD            0.99f
+
+/** Search window (±samples) around the expected harmonic bin */
+#define HARMONIC_SEARCH_RADIUS  2u
+
+/**
+ * Minimum Vpp (in ADC counts) to consider a signal "alive".
+ * Below this threshold the input is treated as floating or DC:
+ *   - type_id  → DC
+ *   - freq_hz  → 0.0
+ *   - vpp      → 0.0
+ *
+ * 500 counts ≈ 25 mV on a 3.3 V / 16-bit ADC.
+ * Raise this value if your board has more noise on unconnected inputs.
+ */
+#define MIN_LIVE_VPP_COUNTS     500u
+
+/* =========================================================================
+ * DMA-mapped working buffers
+ * ========================================================================= */
+
+/* Floating-point copies of ADC data (DC-removed) */
+static float s_ch1_ac[LEN] __attribute__((section(".dma_buffer")));
+static float s_ch2_ac[LEN] __attribute__((section(".dma_buffer")));
+
+/* FFT input (windowed) */
+static float s_ch1_fft_in[LEN]  __attribute__((section(".dma_buffer")));
+static float s_ch2_fft_in[LEN]  __attribute__((section(".dma_buffer")));
+
+/* FFT output (complex interleaved) */
+static float s_ch1_fft_out[LEN] __attribute__((section(".dma_buffer")));
+static float s_ch2_fft_out[LEN] __attribute__((section(".dma_buffer")));
+
+/* Magnitude spectrum: index 0 = DC bin, index N/2 = Nyquist bin */
+static float s_ch1_mag[LEN / 2 + 1] __attribute__((section(".dma_buffer")));
+static float s_ch2_mag[LEN / 2 + 1] __attribute__((section(".dma_buffer")));
+
+/* Hanning window coefficients – computed once at startup */
+static float s_hanning[LEN] __attribute__((section(".dma_buffer")));
+
+/* =========================================================================
+ * Public result structs
+ * ========================================================================= */
+
+Channel_Result_t g_ch1_result;
+Channel_Result_t g_ch2_result;
+
+/* =========================================================================
+ * Private function prototypes
+ * ========================================================================= */
+
+static void       FFT_HanningInit(void);
+static ADC_Stat_t FFT_ComputeStats(const uint16_t *data, uint32_t len);
+static int        FFT_IsDcOrFloating(const ADC_Stat_t *s);
+static float      FFT_MeasureFrequency(const uint16_t *buf,
+                                        uint32_t        len,
+                                        float           sample_rate,
+                                        uint16_t        v_mid);
+static float      FFT_FindPeakInRange(const float *buf,
+                                       uint32_t     start,
+                                       uint32_t     end,
+                                       uint32_t     buf_len);
+static uint8_t    FFT_ClassifyWaveform(const float *mag, uint32_t mag_len);
+static void       FFT_UpdateLCD(void);
+
+/* =========================================================================
+ * Redirect printf → UART1
+ * ========================================================================= */
+
+int __io_putchar(int ch)
+{
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
     return ch;
 }
 
-float CH1_FLT[LEN],CH2_FLT[LEN] __attribute__((section(".dma_buffer")));
-float CH1_OUT[LEN],CH2_OUT[LEN] __attribute__((section(".dma_buffer")));
-float CH1_IN[LEN],CH2_IN[LEN] __attribute__((section(".dma_buffer")));
-float hanning_window[LEN] __attribute__((section(".dma_buffer")));
-float CH1_MAG[LEN/2+1],CH2_MAG[LEN/2+1] __attribute__((section(".dma_buffer")));
+/* =========================================================================
+ * Public: FreeRTOS task entry
+ * ========================================================================= */
 
+void StartFFTTask(void *argument)
+{
+    (void)argument;
 
-char CH1_TYPE[10],CH2_TYPE[10];
+    /* One-time initialisation */
+    FFT_HanningInit();
 
-typedef struct {
-    uint16_t max;
-    uint16_t min;
-    uint16_t mid;
-}ADC_Stat_t;
-ADC_Stat_t CHANNEL_1,CHANNEL_2;
-float CH1_FREQ=0,CH2_FREQ=0;
-float CH1_VPP=0,CH2_VPP=0;
+    arm_rfft_fast_instance_f32 fft_inst;
+    arm_rfft_fast_init_f32(&fft_inst, LEN);
 
+    memset(&g_ch1_result, 0, sizeof(Channel_Result_t));
+    memset(&g_ch2_result, 0, sizeof(Channel_Result_t));
 
-ADC_Stat_t Find_Stats(uint16_t *data, uint16_t len);
-void Hanning_Init(void);
-void P2P_Analysis(void);
-float Measure_Frequency_Software(uint16_t* buffer, uint32_t len, float sample_rate, uint16_t v_mid) ;
-float findMaxInRange(float *buffer,uint32_t bg,uint32_t ed);
-void Type_recognition(void);
+    while (1)
+    {
+        /* Step 1 – Wait for ADC frame */
+        osSemaphoreAcquire(FFTSEMHandle, osWaitForever);
 
+        /* Step 2 – Statistics (min / max / mid) */
+        g_ch1_result.stat = FFT_ComputeStats(CH1_Buffer, LEN);
+        g_ch2_result.stat = FFT_ComputeStats(CH2_Buffer, LEN);
 
-void StartFFTTask(void *argument) {
-    Hanning_Init();
-    arm_rfft_fast_instance_f32 S;
-    arm_rfft_fast_init_f32(&S, 4096);
+        /* Step 2b – DC / floating detection
+         *
+         * If Vpp is below MIN_LIVE_VPP_COUNTS the signal is either
+         * disconnected (floating) or a DC rail.  Skip all heavy processing
+         * and force the output to {DC, 0 Hz, 0 V} for that channel.
+         * The other channel is still processed normally.
+         */
+        int ch1_dead = FFT_IsDcOrFloating(&g_ch1_result.stat);
+        int ch2_dead = FFT_IsDcOrFloating(&g_ch2_result.stat);
 
-    memset(&CHANNEL_1,0,sizeof(ADC_Stat_t));
-    memset(&CHANNEL_2,0,sizeof(ADC_Stat_t));
-
-    const float32_t ADC_TO_V = 3.3f / 65535.0f; // 预乘系数
-
-    while (1) {
-        osSemaphoreAcquire(FFTSEMHandle,osWaitForever);
-        P2P_Analysis();
-        //freq_analysis
-        CH1_FREQ = Measure_Frequency_Software(CH1_Buffer, LEN , RATE , CHANNEL_1.mid) ;
-        CH2_FREQ = Measure_Frequency_Software(CH2_Buffer, LEN , RATE , CHANNEL_2.mid) ;
-
-        for (uint16_t i = 0 ; i< LEN ;i++) {
-            CH1_FLT[i] = (float)(CH1_Buffer[i]-CHANNEL_1.mid) * ADC_TO_V ;
-            CH2_FLT[i] = (float)(CH2_Buffer[i]-CHANNEL_2.mid) * ADC_TO_V;
+        if (ch1_dead)
+        {
+            g_ch1_result.freq_hz = 0.0f;
+            g_ch1_result.vpp     = 0.0f;
+            g_ch1_result.type_id = DC;
+        }
+        if (ch2_dead)
+        {
+            g_ch2_result.freq_hz = 0.0f;
+            g_ch2_result.vpp     = 0.0f;
+            g_ch2_result.type_id = DC;
         }
 
-        // for (uint16_t i = 0; i < LEN/2; i++) {
-        //     printf("%.3f \n",CH2_FLT[i]);
-        // }
+        /* If both channels are dead, skip directly to LCD update */
+        if (ch1_dead && ch2_dead)
+        {
+            FFT_UpdateLCD();
+            if (g_is_adc_continuous == 1) osSemaphoreRelease(ADCSEMHandle);
+            continue;
+        }
 
+        /* Step 3 – Frequency via zero-crossing (live channels only) */
+        if (!ch1_dead)
+            g_ch1_result.freq_hz = FFT_MeasureFrequency(CH1_Buffer, LEN,
+                                                          SAMPLE_RATE_HZ,
+                                                          g_ch1_result.stat.mid);
+        if (!ch2_dead)
+            g_ch2_result.freq_hz = FFT_MeasureFrequency(CH2_Buffer, LEN,
+                                                          SAMPLE_RATE_HZ,
+                                                          g_ch2_result.stat.mid);
 
-        //FFT
-        arm_mult_f32(CH1_FLT, hanning_window, CH1_IN, LEN);
-        arm_mult_f32(CH2_FLT, hanning_window, CH2_IN, LEN);
-        arm_rfft_fast_f32(&S,CH1_IN, CH1_OUT, 0);
-        arm_rfft_fast_f32(&S,CH2_IN, CH2_OUT, 0);
-        CH1_MAG[0]=fabsf(CH1_OUT[0]);
-        CH2_MAG[0]=fabsf(CH2_OUT[0]);
-        arm_cmplx_mag_f32(&CH1_OUT[2], &CH1_MAG[1], (LEN / 2)-1);
-        arm_cmplx_mag_f32(&CH2_OUT[2], &CH2_MAG[1], (LEN / 2)-1);
-        CH1_MAG[LEN/2]=fabsf(CH1_OUT[1]);
-        CH2_MAG[LEN/2]=fabsf(CH2_OUT[1]);
+        /* Step 4 – Convert to float and remove DC offset */
+        for (uint32_t i = 0; i < LEN; i++)
+        {
+            if (!ch1_dead)
+                s_ch1_ac[i] = (float)(CH1_Buffer[i] - g_ch1_result.stat.mid)
+                              * ADC_LSB_VOLTAGE;
+            if (!ch2_dead)
+                s_ch2_ac[i] = (float)(CH2_Buffer[i] - g_ch2_result.stat.mid)
+                              * ADC_LSB_VOLTAGE;
+        }
 
+        /* Step 5 – Apply Hanning window then run FFT */
+        if (!ch1_dead)
+        {
+            arm_mult_f32(s_ch1_ac, s_hanning, s_ch1_fft_in, LEN);
+            arm_rfft_fast_f32(&fft_inst, s_ch1_fft_in, s_ch1_fft_out, 0);
+        }
+        if (!ch2_dead)
+        {
+            arm_mult_f32(s_ch2_ac, s_hanning, s_ch2_fft_in, LEN);
+            arm_rfft_fast_f32(&fft_inst, s_ch2_fft_in, s_ch2_fft_out, 0);
+        }
 
-        Type_recognition();
+        /* Step 6 – Build magnitude spectrum (live channels only)
+         *
+         * arm_rfft_fast_f32 output layout:
+         *   out[0]        = DC bin     (real only)
+         *   out[1]        = Nyquist    (real only)
+         *   out[2..N-1]   = bins 1..(N/2-1)  interleaved Re/Im
+         */
+        if (!ch1_dead)
+        {
+            s_ch1_mag[0]       = fabsf(s_ch1_fft_out[0]);
+            arm_cmplx_mag_f32(&s_ch1_fft_out[2], &s_ch1_mag[1], (LEN / 2) - 1);
+            s_ch1_mag[LEN / 2] = fabsf(s_ch1_fft_out[1]);
+        }
+        if (!ch2_dead)
+        {
+            s_ch2_mag[0]       = fabsf(s_ch2_fft_out[0]);
+            arm_cmplx_mag_f32(&s_ch2_fft_out[2], &s_ch2_mag[1], (LEN / 2) - 1);
+            s_ch2_mag[LEN / 2] = fabsf(s_ch2_fft_out[1]);
+        }
 
+        /* Step 7 – Waveform type classification (live channels only) */
+        if (!ch1_dead)
+            g_ch1_result.type_id = FFT_ClassifyWaveform(s_ch1_mag, LEN / 2 + 1);
+        if (!ch2_dead)
+            g_ch2_result.type_id = FFT_ClassifyWaveform(s_ch2_mag, LEN / 2 + 1);
 
-        CH1_VPP = (float)(CHANNEL_1.max - CHANNEL_1.min) * ADC_TO_V ;
-        CH2_VPP = (float)(CHANNEL_2.max - CHANNEL_2.min) * ADC_TO_V ;
+        /* Step 8 – Vpp in volts (dead channels already forced to 0.0) */
+        if (!ch1_dead)
+            g_ch1_result.vpp = (float)(g_ch1_result.stat.max
+                                       - g_ch1_result.stat.min) * ADC_LSB_VOLTAGE;
+        if (!ch2_dead)
+            g_ch2_result.vpp = (float)(g_ch2_result.stat.max
+                                       - g_ch2_result.stat.min) * ADC_LSB_VOLTAGE;
 
+        /* Step 9 – Push to LCD */
+        FFT_UpdateLCD();
 
-
-        // LCD_Output(CH1_TYPE, CHANNEL_1.max - CHANNEL_1.min,CH1,CH1_FREQ);
-        // LCD_Output(CH2_TYPE, CHANNEL_2.max - CHANNEL_2.min,CH2,CH2_FREQ);
-        HAL_Delay(1000);
-
-        if (g_is_adc_continuous == 1) {
+        /* Step 10 – Release ADC for next acquisition */
+        if (g_is_adc_continuous == 1)
+        {
             osSemaphoreRelease(ADCSEMHandle);
         }
-
     }
 }
 
-// FFTTask.c 里实现
-// 找第一个上升过零点，返回其索引
-// 找不到返回 0（退化成从头显示，总是安全的）
-uint32_t Find_Rising_Edge(const float *buf, uint32_t len,
-                           float v_mid, float vpp) {
-    float hyst = vpp * 0.05f;   // 5% VPP 做迟滞
-    if (hyst < 0.02f) hyst = 0.02f;   // 最小 20mV，防止噪声乱触发
+/* =========================================================================
+ * Public: rising-edge finder (used by display task for waveform alignment)
+ * ========================================================================= */
 
-    int ready = 0;
-    for (uint32_t i = 0; i + 1 < len; i++) {
-        if (buf[i] < (v_mid - hyst)) ready = 1;
-        if (ready && buf[i] < v_mid && buf[i + 1] >= v_mid) return i;
+uint32_t FFT_FindRisingEdge(const float *buf, uint32_t len,
+                             float v_mid,     float vpp)
+{
+    float hyst = vpp * ZERO_CROSS_HYST_RATIO;
+    if (hyst < ZERO_CROSS_HYST_MIN_V)
+    {
+        hyst = ZERO_CROSS_HYST_MIN_V;
     }
-    return 0;
+
+    int armed = 0; /* 1 = signal has dropped below (v_mid - hyst) */
+
+    for (uint32_t i = 0; i + 1 < len; i++)
+    {
+        if (buf[i] < (v_mid - hyst))
+        {
+            armed = 1;
+        }
+        if (armed && buf[i] < v_mid && buf[i + 1] >= v_mid)
+        {
+            return i;
+        }
+    }
+    return 0; /* fallback: align to start of buffer */
 }
 
+/* =========================================================================
+ * Private helpers
+ * ========================================================================= */
 
-void P2P_Analysis() {
-    CHANNEL_1 = Find_Stats(CH1_Buffer,LEN);
-    CHANNEL_2 = Find_Stats(CH2_Buffer,LEN);
+/**
+ * @brief  Decide whether a channel carries a live AC signal.
+ *
+ * A channel is considered "dead" (floating or DC) when its peak-to-peak
+ * ADC count spread is below MIN_LIVE_VPP_COUNTS.  In that case the caller
+ * should force {type=DC, freq=0, vpp=0} and skip the FFT pipeline entirely.
+ *
+ * Floating inputs typically show a small, random noise floor of a few tens
+ * of counts.  A real 25 mV AC signal on a 3.3 V / 16-bit ADC spans ~500
+ * counts, which is the default threshold.
+ *
+ * @param  s  Pointer to the ADC statistics for one channel.
+ * @return 1  if the channel is dead (floating / DC), 0 if it is alive.
+ */
+static int FFT_IsDcOrFloating(const ADC_Stat_t *s)
+{
+    return ((uint32_t)(s->max - s->min) < MIN_LIVE_VPP_COUNTS);
 }
-float Measure_Frequency_Software(uint16_t* buffer, uint32_t len, float sample_rate, uint16_t v_mid) {
-    double first_cross_index = -1.0;
-    double last_cross_index = -1.0;
-    uint32_t cross_count = 0;
 
-    // 增加一个迟滞区间（根据你的16位ADC幅值，设置约1%的幅值作为死区）
-    uint16_t hysteresis = (uint16_t)( (49372 - 9838) * 0.05f ); // 5%的幅值死区
-    int ready_to_count = 1; // 状态锁
+/**
+ * @brief  Pre-compute the Hanning window into s_hanning[].
+ *         Called once at startup; avoids repeated trig in the main loop.
+ */
+static void FFT_HanningInit(void)
+{
+    const float inv_nm1 = 1.0f / (float)(LEN - 1);
 
-    for (uint32_t i = 0; i < len - 1; i++) {
-        // 只有信号跌落到中值以下一定距离，才准备下一次上升沿捕捉
-        if (buffer[i] < (v_mid - hysteresis)) {
-            ready_to_count = 1;
+    for (uint32_t i = 0; i < LEN; i++)
+    {
+        s_hanning[i] = 0.5f * (1.0f
+                       - arm_cos_f32(2.0f * PI * (float)i * inv_nm1));
+    }
+}
+
+/**
+ * @brief  Compute min, max and mid from a raw 16-bit ADC buffer.
+ */
+static ADC_Stat_t FFT_ComputeStats(const uint16_t *data, uint32_t len)
+{
+    ADC_Stat_t s;
+    s.max = 0u;
+    s.min = 0xFFFFu;
+
+    for (uint32_t i = 0; i < len; i++)
+    {
+        uint16_t v = data[i];
+        if (v > s.max) s.max = v;
+        if (v < s.min) s.min = v;
+    }
+
+    s.mid = (uint16_t)((s.max + s.min) / 2u);
+    return s;
+}
+
+/**
+ * @brief  Measure fundamental frequency by counting rising zero-crossings.
+ *
+ * Hysteresis is derived from ADC full-scale to avoid hard-coded ADC counts.
+ * Sub-sample interpolation improves accuracy beyond ±1 sample.
+ *
+ * @param  buf          Raw 16-bit ADC buffer.
+ * @param  len          Number of samples.
+ * @param  sample_rate  ADC sample rate [Hz].
+ * @param  v_mid        Midpoint ADC count (crossing threshold).
+ * @return Frequency in Hz, or 0 if fewer than 2 crossings detected.
+ */
+static float FFT_MeasureFrequency(const uint16_t *buf,
+                                   uint32_t        len,
+                                   float           sample_rate,
+                                   uint16_t        v_mid)
+{
+    const uint16_t hyst = (uint16_t)(ADC_FULL_SCALE * ZERO_CROSS_HYST_RATIO);
+
+    double   first_cross = -1.0;
+    double   last_cross  = -1.0;
+    uint32_t cross_count =  0u;
+    int      armed       =  0;
+
+    for (uint32_t i = 0; i < len - 1u; i++)
+    {
+        if (buf[i] < (uint32_t)(v_mid - hyst))
+        {
+            armed = 1;
         }
 
-        // 捕捉上升沿
-        if (ready_to_count && buffer[i] < v_mid && buffer[i+1] >= v_mid) {
-            double exact_index = (double)i + (double)(v_mid - buffer[i]) / (buffer[i+1] - buffer[i]);
+        if (armed && buf[i] < v_mid && buf[i + 1] >= v_mid)
+        {
+            /* Linear interpolation for sub-sample accuracy */
+            double exact = (double)i
+                         + (double)(v_mid - buf[i])
+                           / (double)(buf[i + 1] - buf[i]);
 
-            if (first_cross_index < 0) first_cross_index = exact_index;
-            last_cross_index = exact_index;
+            if (first_cross < 0.0) first_cross = exact;
+            last_cross = exact;
             cross_count++;
-
-            ready_to_count = 0; // 捕捉到后立即上锁，直到信号跌落回下方
+            armed = 0;
         }
     }
 
-    if (cross_count < 2) return 0.0f;
+    if (cross_count < 2u) return 0.0f;
 
-    double total_samples = last_cross_index - first_cross_index;
-    return (float)(sample_rate * (cross_count - 1) / total_samples);
-}
-void Hanning_Init(void) {
-    for (int i = 0; i < LEN; i++) {
-        // 汉宁窗公式: 0.5 * (1 - cos(2*PI*i / (LEN-1)))
-        hanning_window[i] = 0.5f * (1.0f - arm_cos_f32(2.0f * PI * i / (float32_t)(LEN - 1)));
-    }
+    return (float)(sample_rate * (double)(cross_count - 1u)
+                   / (last_cross - first_cross));
 }
 
-void Type_recognition(void) {
-    memset(CH1_TYPE, 0, sizeof(CH1_TYPE));
-    memset(CH2_TYPE, 0, sizeof(CH2_TYPE));
+/**
+ * @brief  Return the peak magnitude in buf[start..end] (inclusive),
+ *         clamped to [0, buf_len).
+ */
+static float FFT_FindPeakInRange(const float *buf,
+                                  uint32_t     start,
+                                  uint32_t     end,
+                                  uint32_t     buf_len)
+{
+    if (end   >= buf_len) end   = buf_len - 1u;
+    if (start >= buf_len) start = buf_len - 1u;
+    if (start > end)      return 0.0f;
 
-    float maxVal;
-    uint32_t Fundmental_idx;
-    arm_max_f32(&CH1_MAG[1], (LEN/2)-1, &maxVal, &Fundmental_idx);
-    Fundmental_idx +=1;
-
-    uint32_t harmonic3_idx = Fundmental_idx * 3 ;
-    float harmonic3_val=findMaxInRange(CH1_MAG, harmonic3_idx-2, harmonic3_idx+2);
-    float CH1_ratio = harmonic3_val / maxVal;
-    if (CH1_ratio<0.06f) strcpy(CH1_TYPE, "sine");
-    else if (CH1_ratio<0.18f)  strcpy(CH1_TYPE, "triangle");
-    else if (CH1_ratio>0.99f)  strcpy(CH1_TYPE, "current");
-    else  strcpy(CH1_TYPE, "square");
-
-    arm_max_f32(&CH2_MAG[1], (LEN/2)-1, &maxVal, &Fundmental_idx);
-    Fundmental_idx +=1;
-    harmonic3_idx = Fundmental_idx * 3 ;
-    harmonic3_val=findMaxInRange(CH2_MAG, harmonic3_idx-2, harmonic3_idx+2);
-    float CH2_ratio = harmonic3_val / maxVal;
-    if (CH2_ratio<0.06f) strcpy(CH2_TYPE, "sine");
-    else if (CH2_ratio<0.18f)  strcpy(CH2_TYPE, "triangle");
-    else if (CH2_ratio>0.99f)  strcpy(CH2_TYPE, "current");
-    else  strcpy(CH2_TYPE, "square");
+    float peak = buf[start];
+    for (uint32_t i = start + 1u; i <= end; i++)
+    {
+        if (buf[i] > peak) peak = buf[i];
+    }
+    return peak;
 }
 
+/**
+ * @brief  Classify waveform type from the 3rd-harmonic / fundamental ratio.
+ *
+ * Returns one of the type constants from LCD.h:
+ *   SINE / TRIANGLE / SQUARE / DC
+ *
+ * Thresholds are tunable via macros at the top of this file.
+ *
+ * @param  mag      Magnitude spectrum (mag[0]=DC, mag[1]=bin1, …)
+ * @param  mag_len  Length of mag array (= LEN/2 + 1).
+ * @return LCD type constant.
+ */
+static uint8_t FFT_ClassifyWaveform(const float *mag, uint32_t mag_len)
+{
+    /* Find fundamental bin – skip DC at index 0 */
+    float    fund_mag = 0.0f;
+    uint32_t fund_idx = 0u;
+    arm_max_f32(&mag[1], mag_len - 1u, &fund_mag, &fund_idx);
+    fund_idx += 1u; /* shift back to absolute index */
 
-float findMaxInRange(float *buffer,uint32_t bg,uint32_t ed) {
-    float maxVal = buffer[bg];
+    if (fund_mag < 1e-6f) return DC; /* guard: no signal detected */
 
-    if (buffer == NULL || bg >= ed) {
-        return 0.0f;  // 或采用其他错误处理方式
-    }
+    /* Measure 3rd harmonic with a ±HARMONIC_SEARCH_RADIUS bin window */
+    uint32_t h3_center = fund_idx * 3u;
+    uint32_t h3_start  = (h3_center > HARMONIC_SEARCH_RADIUS)
+                         ? h3_center - HARMONIC_SEARCH_RADIUS : 0u;
+    uint32_t h3_end    = h3_center + HARMONIC_SEARCH_RADIUS;
 
-    for (int i=bg+1;i<=ed;i++) {
-        if (maxVal <= buffer[i]) {
-            maxVal = buffer[i];
-        }
-    }
-    return maxVal;
+    float ratio = FFT_FindPeakInRange(mag, h3_start, h3_end, mag_len)
+                  / fund_mag;
+
+    if      (ratio < SINE_THRESHOLD)     return SINE;
+    else if (ratio < TRIANGLE_THRESHOLD) return TRIANGLE;
+    else if (ratio > DC_THRESHOLD)       return DC;
+    else                                 return SQUARE;
 }
 
+/**
+ * @brief  Push both channels' latest results to the LCD.
+ *
+ * Two calls are made per frame:
+ *   - LCD_Update_Stats : numerical readout (freq / Vpp / type)
+ *   - LCD_Update_Waves : rendered waveform preview (×2 channels)
+ *
+ * Amplitude passed to LCD_Update_Waves is the raw ADC count difference
+ * (max - min, range 0-65535), which the LCD driver maps to its 0-160 pixel
+ * height via a 16-bit right-shift.
+ */
+static void FFT_UpdateLCD(void)
+{
+    LCD_Update_Stats(g_ch1_result.freq_hz, g_ch1_result.vpp, g_ch1_result.type_id,
+                     g_ch2_result.freq_hz, g_ch2_result.vpp, g_ch2_result.type_id);
 
+    LCD_Update_Waves(g_ch1_result.type_id,
+                     g_ch1_result.stat.max - g_ch1_result.stat.min,
+                     CH1,
+                     g_ch1_result.freq_hz);
 
-ADC_Stat_t Find_Stats(uint16_t *data, uint16_t len) {
-    ADC_Stat_t res = {0, 0xFFFF, 0.0f};
-    uint32_t sum = 0;
-
-    for (uint16_t i = 0; i < len; i++) {
-        uint16_t val = data[i];
-
-        if (val > res.max) res.max = val;
-        if (val < res.min) res.min = val;
-    }
-
-    res.mid = (res.max+res.min)/2;
-    return res;
+    LCD_Update_Waves(g_ch2_result.type_id,
+                     g_ch2_result.stat.max - g_ch2_result.stat.min,
+                     CH2,
+                     g_ch2_result.freq_hz);
 }
