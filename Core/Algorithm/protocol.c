@@ -1,13 +1,14 @@
 // protocol.c
 #include "protocol.h"
 
-// CRC16-CCITT，校验帧的前8字节
+
+//MODEBUS - CRC
 uint16_t Proto_CRC16(const uint8_t *data, uint16_t len) {
     uint16_t crc = 0xFFFF;
     for (uint16_t i = 0; i < len; i++) {
-        crc ^= (uint16_t)data[i] << 8;
+        crc ^= (uint16_t)data[i];        // 低字节异或，注意和CCITT的区别
         for (int j = 0; j < 8; j++)
-            crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : (crc << 1);
+            crc = (crc & 0x0001) ? (crc >> 1) ^ 0xA001 : (crc >> 1);  // 低位优先
     }
     return crc;
 }

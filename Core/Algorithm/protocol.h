@@ -14,8 +14,8 @@
 #define VPP_MAX         1000
 
 typedef enum {
-    OP_ADC_ON       = 0xA1,
-    OP_ADC_OFF      = 0xA0,
+    OP_ADC_ON       = 0xAD,
+    OP_ADC_OFF      = 0xAE,
     OP_DAC1_UPDATE  = 0xD1,
     OP_DAC2_UPDATE  = 0xD2,
     OP_DAC1_OFF     = 0xDA,

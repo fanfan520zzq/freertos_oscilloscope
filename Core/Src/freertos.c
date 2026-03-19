@@ -159,7 +159,7 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the queue(s) */
   /* creation of UARTQueue */
-  UARTQueueHandle = osMessageQueueNew (80, sizeof(uint8_t*), &UARTQueue_attributes);
+  UARTQueueHandle = osMessageQueueNew (80, sizeof(uint8_t), &UARTQueue_attributes);
 
   /* creation of MSGQueue */
   MSGQueueHandle = osMessageQueueNew (16, sizeof(APP_Text*), &MSGQueue_attributes);
