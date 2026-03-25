@@ -151,3 +151,15 @@ PB15 _ USART_TX
 ## 3.12日更新
 
 定时器的等精度测频必须要求信号的一定幅值才可以，本次ADC采集有可能为小幅值小偏置，所以舍弃定时器方案，我决定减少采样的频率范围，用高频ADC采样率扫描，做*软件比较器*与*软件输入捕获*
+
+## UPDATE: DDS 1VDC Bias & 1Vpp Limits
+- 增加了针对 DAC 输出的基准电压计算：固定 **1V DC 偏置 (`DAC_BIAS_1V`)**，并基于 3.3V 满量程对波形查找表（LUT）映射中心。
+- API 能够响应入参 `vpp(0-1000)` 直接生成 `±0.5V (1Vpp)` 的可调幅度波形，波形始终以 1V 为中心稳压。
+
+## UPDATE: SPWM Sweep Support (TIM1 & DMA Ping-Pong)
+- 新增 `spwm_sweep.h/c` 模块用于实现连续低频扫频，采用 Ping-Pong 机制和 D-Cache 清洗策略：
+- 使用 2000 个采样点的缓冲并一分为二（`HT` / `TC` 回调控制），缓冲区配置为 `__attribute__((section(".dma_buffer"))) ALIGN_32BYTES()`。
+- 基于 `100kHz` 更新率，支持 `10Hz ~ 1kHz` 低频及 SPWM 平滑改变占空比的无极扫频输出。
+
+## UPDATE: Agents Documentation
+- 添加了 `agents_zh.md` (`AGENTS.md` 的中文双语扩展版) 以便代码智能体(Agents)可以随时调取项目的链路上下文。
