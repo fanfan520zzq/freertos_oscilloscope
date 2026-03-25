@@ -1,0 +1,43 @@
+# CMake
+/cmake-build-*/
+/build/
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# C/C++ build outputs
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+*.out
+*.elf
+*.hex
+*.bin
+*.map
+*.su
+
+# STM32CubeMX
+.mxproject
+*.ioc.bak
+
+# Debugger / JTAG
+*.launch
+*.jlink
+JLinkLog.txt
+.gdbinit
+
