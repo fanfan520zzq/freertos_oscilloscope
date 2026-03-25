@@ -212,7 +212,9 @@ void StartFFTTask(void *argument)
                 s_ch2_ac[i] = (float)(CH2_Buffer[i] - g_ch2_result.stat.mid)
                               * ADC_LSB_VOLTAGE;
         }
-
+        // for (int i = 0; i < LEN; i++) {
+        //     printf("%.3f",s_ch1_ac[i]);
+        // }
         /* Step 5 – Apply Hanning window then run FFT */
         if (!ch1_dead)
         {

@@ -10,13 +10,27 @@
 |---|---|---|---|---|---|---|
 |1byte|1byte|1byte|2bytes|2bytes|1byte|2bytes|
 
+## 操作码
+
+    typedef enum {
+        ADC_ON = 0xAD,
+        ADC_OFF = 0xAE,
+        DAC1_UPDATE = 0xD1,
+        DAC2_UPDATE = 0xD2,
+        DAC1_RELEASE = 0xDA,
+        DAC2_RELEASE = 0xDB,
+    }OP;
+
+
 
 ## 波形
 
-0-DC
-1-SINE
-2-SQUARE
-3-TRIANGLE
+    1-DC
+    2-SINE
+    3-SQUARE
+    4-TRIANGLE
+
+
 
 
 

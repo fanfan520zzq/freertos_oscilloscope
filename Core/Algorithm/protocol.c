@@ -41,9 +41,12 @@ bool Proto_Validate(const ProtoFrame *frame) {
         return true;
 
     // DAC更新指令校验范围
-    if (frame->freq_hz < FREQ_MIN || frame->freq_hz > FREQ_MAX) return false;
-    if (frame->vpp_mv  < VPP_MIN  || frame->vpp_mv  > VPP_MAX)  return false;
-    if (frame->wave_type > 2)                                    return false;
+    if (frame->freq_hz < FREQ_MIN || frame->freq_hz > FREQ_MAX)
+        return false;
+    if (frame->vpp_mv  < VPP_MIN  || frame->vpp_mv  > VPP_MAX)
+        return false;
+    if (frame->wave_type > 2)
+        return false;
 
     return true;
 }
