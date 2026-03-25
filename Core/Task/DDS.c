@@ -13,20 +13,17 @@ static uint32_t phase_index1=0,FTW1;
 static uint32_t phase_index2=0,FTW2;
 static uint16_t Buffer1_Len,Buffer2_Len;
 
-
-#define DAC_MID_VAL 620.6f
-#define DAC_1V_VAL 1241.2f
+#define DAC_BIAS_1V    1241.21f  /* 1V DC = 4096 * 1.0 / 3.3 */
+#define DAC_AMP_0_5V   620.606f  /* 0.5V amplitude = 4096 * 0.5 / 3.3 */
 
 void DDS_Init(void)
 {
-    const float MAX_VAL = 1241.2f;    // 620.6-----1861.8f
-    const float MID_VAL = DAC_MID_VAL;
     for(uint16_t i = 0; i < 1024; i++)
     {
-        SinBuffer[i] = (uint16_t)(MID_VAL + MAX_VAL * sinf((2.0f * 3.1415926f * i) / 1024.0f));
-        SquBuffer[i] = (i < 512) ? MAX_VAL : 0;
-        if(i <= 512) TriBuffer[i] = (uint16_t)(i * (float)MAX_VAL) / 512.0f ;
-        else  TriBuffer[i] = (uint16_t)((1024 - i) * (float)MAX_VAL) / 512.0f ;
+        SinBuffer[i] = (uint16_t)(DAC_AMP_0_5V + DAC_AMP_0_5V * sinf((2.0f * 3.1415926f * i) / 1024.0f));
+        SquBuffer[i] = (i < 512) ? (uint16_t)(2.0f * DAC_AMP_0_5V) : 0;
+        if(i <= 512) TriBuffer[i] = (uint16_t)(i * (2.0f * DAC_AMP_0_5V) / 512.0f);
+        else  TriBuffer[i] = (uint16_t)((1024 - i) * (2.0f * DAC_AMP_0_5V) / 512.0f);
     }
 
     HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
@@ -42,19 +39,21 @@ void DDS1_Update_DATA(uint16_t freq,uint16_t vpp,uint8_t waveType){//vpp 0-1000
     phase_index1=0;
     FTW1=(uint32_t)(freq)*(4294967296.0f)/DDS_TIM; //2^32=4294967296
     Buffer1_Len = (uint32_t)(DDS_TIM / freq);
+
+    float scale = (float)vpp / 1000.0f;
     for(int i=0;i<Buffer1_Len;i++){
         switch(waveType){
             case 0:
-                Buffer1[i]=(uint16_t)((SinBuffer[phase_index1>>22]-DAC_MID_VAL)*(vpp)/1000.0f) + DAC_1V_VAL ;
+                Buffer1[i]=(uint16_t)(((float)SinBuffer[phase_index1>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             case 1:
-                Buffer1[i]=(uint16_t)((SquBuffer[phase_index1>>22]-DAC_MID_VAL)*(vpp)/1000.0f) + DAC_1V_VAL ;
+                Buffer1[i]=(uint16_t)(((float)SquBuffer[phase_index1>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             case 2:
-                Buffer1[i]=(uint16_t)((TriBuffer[phase_index1>>22]-DAC_MID_VAL)*(vpp)/1000.0f) + DAC_1V_VAL ;
+                Buffer1[i]=(uint16_t)(((float)TriBuffer[phase_index1>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             default:
-                Buffer1[i]=0 + DAC_MID_VAL ;
+                Buffer1[i]=(uint16_t)DAC_BIAS_1V;
                 break;
         }
         phase_index1+=FTW1;
@@ -66,28 +65,28 @@ void DDS1_Update_DATA(uint16_t freq,uint16_t vpp,uint8_t waveType){//vpp 0-1000
 
 void DDS2_Update_DATA(uint16_t freq,uint16_t vpp,uint8_t waveType){//vpp 0-1000
     HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_2);
+
     phase_index2=0;
     FTW2=(uint32_t)(freq)*(4294967296.0f)/DDS_TIM; //2^32=4294967296
     Buffer2_Len=(uint32_t)(DDS_TIM / freq);
 
+    float scale = (float)vpp / 1000.0f;
     for(int i=0;i<Buffer2_Len;i++){
         switch(waveType){
             case 0:
-                Buffer2[i]=(uint16_t)(SinBuffer[phase_index2>>22]*(vpp)/1000.0f);
+                Buffer2[i]=(uint16_t)(((float)SinBuffer[phase_index2>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             case 1:
-                Buffer2[i]=(uint16_t)(SquBuffer[phase_index2>>22]*(vpp)/1000.0f);
+                Buffer2[i]=(uint16_t)(((float)SquBuffer[phase_index2>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             case 2:
-                Buffer2[i]=(uint16_t)(TriBuffer[phase_index2>>22]*(vpp)/1000.0f);
+                Buffer2[i]=(uint16_t)(((float)TriBuffer[phase_index2>>22] - DAC_AMP_0_5V) * scale + DAC_BIAS_1V);
                 break;
             default:
-                Buffer2[i]=0;
+                Buffer2[i]=(uint16_t)DAC_BIAS_1V;
                 break;
         }
         phase_index2+=FTW2;
-
-
     }
     SCB_CleanDCache_by_Addr((uint32_t*)Buffer2, Buffer2_Len * sizeof(uint16_t));
     HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_2, (uint32_t*)Buffer2, Buffer2_Len, DAC_ALIGN_12B_R);
