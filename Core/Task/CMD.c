@@ -5,7 +5,7 @@
 
 #include "DDS.h"
 #include "MSG.h"
-
+#include "spwm_sweep.h"
 uint8_t g_is_adc_continuous = 1;
 
 
@@ -18,6 +18,7 @@ void StartCMDTask(void *argument) {   //PA4 PA5
     // HAL_TIM_PWM_Start(&htim13, TIM_CHANNEL_1);
 
     while (1) {
+
         if (osMessageQueueGet(MSGQueueHandle,&MSG,0,osWaitForever)==osOK) {
             switch (MSG->op) {
                 case DAC1_UPDATE:{

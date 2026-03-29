@@ -1,0 +1,29 @@
+q   # 编译输出和缓存目录
+cmake-build-*/
+build/
+Debug/
+Release/
+*.o
+*.d
+*.lst
+*.map
+*.elf
+*.hex
+*.bin
+*.a
+
+# IDE 和版本控制文件夹
+.idea/
+.vscode/
+.git/
+
+# 官方库和第三方中间件（核心降本区，文件极大且不应被修改）
+Drivers/
+Middlewares/
+
+# 日志和其他中间文件
+*.log
+CMakeCache.txt
+CMakeFiles/
+Testing/
+

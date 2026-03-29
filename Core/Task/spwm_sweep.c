@@ -3,8 +3,11 @@
 //
 
 #include "spwm_sweep.h"
-#include "tim.h" /* 包含 TIM1 对象 extern TIM_HandleTypeDef htim1; */
+#include "tim.h" /* 包含 TIM8 对象 extern TIM_HandleTypeDef htim8; */
+#include "adc_process.h"
 #include <math.h>
+
+extern DMA_HandleTypeDef hdma_tim8_up; // 声明外部定义的 DMA 句柄
 
 // ========== DDS 和 DMA 结构定义 ==========
 // 必须配置 D-Cache 一致性: 放置到 .dma_buffer 中，对齐到 32 字节
@@ -13,14 +16,21 @@ ALIGN_32BYTES(uint16_t spwm_dma_buf[SPWM_BUF_SIZE]) __attribute__((section(".dma
 // 正弦映射表LUT
 static uint16_t SineLUT[SINE_LUT_SIZE];
 
+// 工作模式: 0=扫频, 1=定频
+static volatile uint8_t spwm_mode = 0;
+
 // 全局 DDS 状态参数
-static uint32_t Target_FTW = 0;
-static uint32_t Current_FTW = 0;
+static volatile uint32_t Target_FTW = 0;
+static volatile uint32_t Current_FTW = 0;
 static uint32_t Target_Pulse_Count = 0;
 static uint32_t current_pulse_counter = 0;
 
 static uint32_t phase_acc = 0; // 相位累加器
 static uint16_t sweep_index = 0;
+
+// 扫频采样触发控制: sample_start_point = Target_Pulse_Count / 2
+static uint32_t sample_start_point = 0;
+static uint8_t  sample_triggered = 0; // 当前频点是否已触发 ADC
 
 // ========== 宏计算 ==========
 // FTW = f_out * (2^32 / f_clk)
@@ -58,7 +68,7 @@ static const uint16_t SweepTable_Size = sizeof(SweepTable) / sizeof(SweepTable[0
 // ========== 函数实现 ==========
 
 /**
- * @brief 计算填充半区缓冲区 (1000 个采样点)
+ * @brief 计算填充半区缓冲区 (1008 个采样点)
  */
 static void Fill_Buffer_Half(uint16_t *buf_ptr)
 {
@@ -71,11 +81,47 @@ static void Fill_Buffer_Half(uint16_t *buf_ptr)
 }
 
 /**
+ * @brief 扫频模式三阶段状态机 (在 DMA HT/TC 回调中调用)
+ *
+ * 阶段 1: 滤波器稳定期 (pulse_counter < sample_start_point), 只发波
+ * 阶段 2: 单次触发 ADC 采集 (pulse_counter 刚跨越 sample_start_point)
+ * 阶段 3: 等待切频 (pulse_counter >= Target_Pulse_Count)
+ */
+static void Sweep_StateMachine(void)
+{
+    current_pulse_counter += SPWM_HALF_BUF_SIZE;
+
+    /* 阶段 2: 单次 ADC 触发 (每频点仅一次) */
+    if (!sample_triggered &&
+        current_pulse_counter >= sample_start_point) {
+        sample_triggered = 1;
+        ADC_Sweep_Start_DMA();
+    }
+
+    /* 阶段 3: 驻留时间耗尽, 切到下一个频点 */
+    if (current_pulse_counter >= Target_Pulse_Count) {
+        current_pulse_counter = 0;
+        sample_triggered = 0;
+        sweep_index++;
+        if (sweep_index >= SweepTable_Size) {
+            sweep_index = 0;
+        }
+        Target_FTW = SweepTable[sweep_index].ftw;
+        Target_Pulse_Count = SweepTable[sweep_index].target_pulse;
+        sample_start_point = Target_Pulse_Count / 2;
+    }
+}
+
+// 提前声明回调函数以避免编译错误
+void SPWM_DMA_HalfCpltCallback(DMA_HandleTypeDef *hdma);
+void SPWM_DMA_CpltCallback(DMA_HandleTypeDef *hdma);
+
+/**
  * @brief 初始化 SPWM 和 Sweep 模型。应在 Task 或者主函数初始化时调用
  */
 void SPWM_Sweep_Init(void)
 {
-    // 1. 初始化正弦LUT，范围映射到 TIM1 ARR_MAX (对应调制100kHz时的计数值)
+    // 1. 初始化正弦LUT，范围映射到 TIM8 ARR_MAX (对应调制100kHz时的计数值)
     for (int i = 0; i < SINE_LUT_SIZE; i++) {
         // [0, SPWM_ARR_MAX] 中心化正弦
         float rad = (2.0f * 3.14159265f * i) / SINE_LUT_SIZE;
@@ -83,105 +129,157 @@ void SPWM_Sweep_Init(void)
         SineLUT[i] = (uint16_t)(val * SPWM_ARR_MAX);
     }
 
-    // 2. 初始化初始工作状态
+    // 2. 初始化初始工作状态 (默认扫频模式)
+    spwm_mode = 0;
     sweep_index = 0;
     Target_FTW = SweepTable[sweep_index].ftw;
     Target_Pulse_Count = SweepTable[sweep_index].target_pulse;
+    sample_start_point = Target_Pulse_Count / 2;
+    sample_triggered = 0;
     Current_FTW = Target_FTW;
     current_pulse_counter = 0;
     phase_acc = 0;
 
-    // 先用数据填充满 2000 个点的完整 Buffer，以便首轮 DMA 启动正常
+    // 先用数据填充满完整 Buffer，以便首轮 DMA 启动正常
     Fill_Buffer_Half(&spwm_dma_buf[0]);
     Fill_Buffer_Half(&spwm_dma_buf[SPWM_HALF_BUF_SIZE]);
 
     // DCache一致性清理
-    SCB_CleanDCache_by_Addr((uint32_t*)spwm_dma_buf, sizeof(spwm_dma_buf));
+    // SCB_CleanDCache_by_Addr((uint32_t*)spwm_dma_buf, sizeof(spwm_dma_buf));
 }
 
 /**
- * @brief 启动扫频和 TIM1 DMA
- */
-void SPWM_Sweep_Start(void)
-{
-    // 调用 HAL 启动包含 DMA 的 PWM 生成（请匹配你的 TIM1 使用通道，例如 Channel 1）
-    HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t*)spwm_dma_buf, SPWM_BUF_SIZE);
-}
-
-/**
- * @brief 停止 TIM1 DMA 输出
+ * @brief 停止 TIM8 DMA 输出
  */
 void SPWM_Sweep_Stop(void)
 {
-    HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Stop_DMA(&htim8, TIM_CHANNEL_1);
+}
+
+/**
+ * @brief 启动指定频率输出 (10Hz-1kHz, 1Hz分辨率)
+ * @param freq_hz 目标频率 (10-1000 Hz)
+ *
+ * 可在输出运行中调用以动态切频，新频率在下一个 DMA 半区回调中无缝生效。
+ * 首次调用会启动 DMA 输出。
+ */
+void SPWM_Set_Frequency(uint16_t freq_hz)
+{
+    if (freq_hz < 10) freq_hz = 10;
+    if (freq_hz > 1000) freq_hz = 1000;
+
+    // 切换到定频模式
+    spwm_mode = 1;
+    Target_FTW = CALC_FTW(freq_hz);
+
+    // 如果 DMA 尚未运行 (Current_FTW == 0 表示首次)，则完整启动
+    if (Current_FTW == 0) {
+        phase_acc = 0;
+        Current_FTW = Target_FTW;
+
+        Fill_Buffer_Half(&spwm_dma_buf[0]);
+        Fill_Buffer_Half(&spwm_dma_buf[SPWM_HALF_BUF_SIZE]);
+
+        HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+
+        hdma_tim8_up.XferCpltCallback = SPWM_DMA_CpltCallback;
+        hdma_tim8_up.XferHalfCpltCallback = SPWM_DMA_HalfCpltCallback;
+
+        HAL_DMA_Start_IT(&hdma_tim8_up, (uint32_t)spwm_dma_buf, (uint32_t)&htim8.Instance->CCR1, SPWM_BUF_SIZE);
+        __HAL_TIM_ENABLE_DMA(&htim8, TIM_DMA_UPDATE);
+    }
+    // 如果 DMA 已在运行，只更新 Target_FTW 即可，回调中会自动切换
+}
+
+/**
+ * @brief 强制重启定频输出 (停止后重新启动 DMA)
+ * @param freq_hz 目标频率 (10-1000 Hz)
+ */
+void SPWM_Set_Frequency_Restart(uint16_t freq_hz)
+{
+    if (freq_hz < 10) freq_hz = 10;
+    if (freq_hz > 1000) freq_hz = 1000;
+
+    HAL_TIM_PWM_Stop_DMA(&htim8, TIM_CHANNEL_1);
+
+    spwm_mode = 1;
+    phase_acc = 0;
+    Target_FTW = CALC_FTW(freq_hz);
+    Current_FTW = Target_FTW;
+    Target_Pulse_Count = 0xFFFFFFFF;
+    current_pulse_counter = 0;
+
+    Fill_Buffer_Half(&spwm_dma_buf[0]);
+    Fill_Buffer_Half(&spwm_dma_buf[SPWM_HALF_BUF_SIZE]);
+
+    HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+
+    hdma_tim8_up.XferCpltCallback = SPWM_DMA_CpltCallback;
+    hdma_tim8_up.XferHalfCpltCallback = SPWM_DMA_HalfCpltCallback;
+
+    HAL_DMA_Start_IT(&hdma_tim8_up, (uint32_t)spwm_dma_buf, (uint32_t)&htim8.Instance->CCR1, SPWM_BUF_SIZE);
+    __HAL_TIM_ENABLE_DMA(&htim8, TIM_DMA_UPDATE);
 }
 
 // ========== DMA 中断回调 ==========
 
 /**
  * @brief DMA 传输半完成回调 (HT)
- * 更新左半部分 (下标 0 ~ 999) 的占空比数据
+ * 更新左半部分 (下标 0 ~ SPWM_HALF_BUF_SIZE-1) 的占空比数据
  */
-void HAL_TIM_PWM_PulseFinishedHalfCpltCallback(TIM_HandleTypeDef *htim)
+void SPWM_DMA_HalfCpltCallback(DMA_HandleTypeDef *hdma)
 {
-    if (htim->Instance == TIM1)
-    {
-        // 1. 无缝切换影子变量
-        if (Current_FTW != Target_FTW) {
-            Current_FTW = Target_FTW;
-        }
+    (void)hdma;
 
-        // 2. 计算并填充前半区 Buffer
-        Fill_Buffer_Half(&spwm_dma_buf[0]);
+    // 无缝切换影子变量
+    if (Current_FTW != Target_FTW) {
+        Current_FTW = Target_FTW;
+    }
 
-        // 3. Cache 一致性: 必须清理该一半的缓存以便 DMA 搬走
-        // 注: SPWM_HALF_BUF_SIZE * sizeof(uint16_t) 即 1000 * 2 = 2000 字节
-        SCB_CleanDCache_by_Addr((uint32_t*)&spwm_dma_buf[0], SPWM_HALF_BUF_SIZE * sizeof(uint16_t));
+    Fill_Buffer_Half(&spwm_dma_buf[0]);
 
-        // 4. 驻留机制处理
-        current_pulse_counter += SPWM_HALF_BUF_SIZE;
-        if (current_pulse_counter >= Target_Pulse_Count) {
-            current_pulse_counter = 0; // 重置计数
-            sweep_index++;             // 下一个频点
-            if (sweep_index >= SweepTable_Size) {
-                sweep_index = 0;       // 循环扫频
-            }
-            // 更新 Target
-            Target_FTW = SweepTable[sweep_index].ftw;
-            Target_Pulse_Count = SweepTable[sweep_index].target_pulse;
-        }
+    // SCB_CleanDCache_by_Addr((uint32_t*)&spwm_dma_buf[0], SPWM_HALF_BUF_SIZE * sizeof(uint16_t));
+
+    if (spwm_mode == 0) {
+        Sweep_StateMachine();
     }
 }
 
 /**
  * @brief DMA 传输完成回调 (TC)
- * 更新右半部分 (下标 1000 ~ 1999) 的占空比数据
+ * 更新右半部分 (下标 SPWM_HALF_BUF_SIZE ~ SPWM_BUF_SIZE-1) 的占空比数据
  */
-void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
+void SPWM_DMA_CpltCallback(DMA_HandleTypeDef *hdma)
 {
-    if (htim->Instance == TIM1)
-    {
-        // 1. 无缝切换影子变量
-        if (Current_FTW != Target_FTW) {
-            Current_FTW = Target_FTW;
-        }
+    (void)hdma;
 
-        // 2. 计算并填充后半区 Buffer
-        Fill_Buffer_Half(&spwm_dma_buf[SPWM_HALF_BUF_SIZE]);
-
-        // 3. Cache 一致性 (注意缓存块地址偏移)
-        SCB_CleanDCache_by_Addr((uint32_t*)&spwm_dma_buf[SPWM_HALF_BUF_SIZE], SPWM_HALF_BUF_SIZE * sizeof(uint16_t));
-
-        // 4. 驻留机制处理
-        current_pulse_counter += SPWM_HALF_BUF_SIZE;
-        if (current_pulse_counter >= Target_Pulse_Count) {
-            current_pulse_counter = 0;
-            sweep_index++;
-            if (sweep_index >= SweepTable_Size) {
-                sweep_index = 0;
-            }
-            Target_FTW = SweepTable[sweep_index].ftw;
-            Target_Pulse_Count = SweepTable[sweep_index].target_pulse;
-        }
+    if (Current_FTW != Target_FTW) {
+        Current_FTW = Target_FTW;
     }
+
+    Fill_Buffer_Half(&spwm_dma_buf[SPWM_HALF_BUF_SIZE]);
+
+    // SCB_CleanDCache_by_Addr((uint32_t*)&spwm_dma_buf[SPWM_HALF_BUF_SIZE], SPWM_HALF_BUF_SIZE * sizeof(uint16_t));
+
+    if (spwm_mode == 0) {
+        Sweep_StateMachine();
+    }
+}
+
+/**
+ * @brief 启动扫频和 TIM8 DMA
+ */
+void SPWM_Sweep_Start(void)
+{
+    spwm_mode = 0; // 扫频模式
+    sample_triggered = 0;
+    sample_start_point = SweepTable[sweep_index].target_pulse / 2;
+
+    HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+
+    hdma_tim8_up.XferCpltCallback = SPWM_DMA_CpltCallback;
+    hdma_tim8_up.XferHalfCpltCallback = SPWM_DMA_HalfCpltCallback;
+
+    HAL_DMA_Start_IT(&hdma_tim8_up, (uint32_t)spwm_dma_buf, (uint32_t)&htim8.Instance->CCR1, SPWM_BUF_SIZE);
+    __HAL_TIM_ENABLE_DMA(&htim8, TIM_DMA_UPDATE);
 }

@@ -163,3 +163,20 @@ PB15 _ USART_TX
 
 ## UPDATE: Agents Documentation
 - 添加了 `agents_zh.md` (`AGENTS.md` 的中文双语扩展版) 以便代码智能体(Agents)可以随时调取项目的链路上下文。
+
+## UPDATE 3.29: SPWM 定频输出 + 发波触发测量链路
+
+### SPWM 定频输出
+- SPWM_Set_Frequency(freq_hz): 10Hz~1kHz 自定义频率输出, 1Hz 分辨率, 支持运行中动态切频
+- SPWM_Set_Frequency_Restart(freq_hz): 强制重启定频输出, 相位归零
+- 增加 spwm_mode 标志位区分扫频/定频模式, DMA 回调中根据模式分支
+
+### 发波触发测量链路 (adc_process)
+- 新增 adc_process.h/c 模块, 封装扫频场景下的 ADC 单次采集 (2048点) + vTaskNotifyGiveFromISR 通知 DSP 任务
+- 扫频模式 DMA 回调中植入三阶段状态机:
+  1. 滤波器稳定期: 只发波, 等待系统稳定
+  2. 单次触发采样: 在驻留时间中点触发 ADC_Sweep_Start_DMA()
+  3. 等待切频: 驻留耗尽后切换下一频点
+- spwm_sweep.c 不 include adc.h, 保持发波与底层 ADC 硬件的解耦
+- DSP 信号处理任务接口已预留, 待后续实现
+

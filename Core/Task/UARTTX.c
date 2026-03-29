@@ -4,7 +4,7 @@
 #include "MSG.h"
 #include "usart.h"
 #include "protocol.h"
-
+#include "spwm_sweep.h"
 
 
 void StartUARTTask(void *argument) {
@@ -13,6 +13,8 @@ void StartUARTTask(void *argument) {
     uint8_t test[] = {0xAA, 0x0A, 0xAE, 0x00, 0x00, 0x00, 0x00, 0x00};
     uint16_t crc = Proto_CRC16(test, 8);
 
+    SPWM_Sweep_Init();
+    SPWM_Test_100Hz_Start(); // 移到死循环外部，只启动一次
 
     uint8_t raw[PROTO_LEN];
     uint8_t byte;

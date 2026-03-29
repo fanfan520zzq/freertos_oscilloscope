@@ -4,6 +4,7 @@
 #include <adc.h>
 #include "ADCTask.h"
 #include "tim.h"
+#include "adc_process.h"
 
 
 uint16_t CH1_Buffer[LEN] __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)));
@@ -12,6 +13,10 @@ uint8_t flag_CH1=0,flag_CH2=0;
 
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+    /* 优先检查是否为扫频采集完成, 若是则由 adc_process 处理并返回 */
+    if (ADC_Sweep_ConvCpltHandler(hadc))
+        return;
+
     if(hadc == &hadc1){
         //SCB_InvalidateDCache_by_Addr((uint32_t*)CH1_Buffer, sizeof(CH1_Buffer));
         HAL_ADC_Stop_DMA(&hadc1);
@@ -48,4 +53,3 @@ void Start_Sample(void) {
     HAL_ADC_Start_DMA(&hadc1,(uint32_t*)CH1_Buffer,LEN);
     HAL_ADC_Start_DMA(&hadc2,(uint32_t*)CH2_Buffer,LEN);
 }
-

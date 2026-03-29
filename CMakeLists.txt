@@ -47,7 +47,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         Core/Algorithm/protocol.c
         Core/Algorithm/protocol.h
         Core/Task/spwm_sweep.c
-        Core/Task/spwm_sweep.c
+        Core/Task/adc_process.c
 
 )
 
@@ -81,6 +81,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Algorithm/lttb.h
         Core/Algorithm/protocol.c
         Core/Algorithm/protocol.h
+
+        Core/Task/adc_process.c
+        Core/Task/adc_process.h
 )
 
 
