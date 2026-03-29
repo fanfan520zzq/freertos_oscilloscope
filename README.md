@@ -5,6 +5,11 @@
 
 ## 统一帧格式
 
+## 最近更新 (2026/03)
+- **DDS 信号发生器电压逻辑优化**: 将 DDS 基准输出调整为 1V DC 偏置 (0.5V - 1.5V 范围，对应 1Vpp 幅值)，支持可调的 Vpp 输出（量程 3.3V 对应 4096 精度）。
+- **增加 SPWM 扫频功能**: 根据 `sweep_for_gemini.md` 要求，在 `Task/spwm_sweep.c` 中实现了低频扫频与 100Hz 测试 PWM 直出功能，基于 `TIM8_CH1` 的 DMA 半完成与完成中断进行乒乓缓冲更新。
+- **降本增效配置文件**: 增加了 `.claudeignore` 忽略不需要给 LLM 发送的文件，降低 Token 开销。
+- **任务通知优化**: 改用 FreeRTOS 任务通知 (`vTaskNotifyGiveFromISR` / `ulTaskNotifyTake`) 代替信号量机制，提升了 DSP 数据处理对中断信号的响应速度。
 
 |0xAA|0x0A|OP|FREQ|VPP|WAVE|CRC16|
 |---|---|---|---|---|---|---|
